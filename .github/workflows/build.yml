@@ -1,4 +1,4 @@
-name: Direct Java Build EgyPlayer
+name: Build Working EgyPlayer APK
 
 on:
   push:
@@ -17,43 +17,108 @@ jobs:
           distribution: 'temurin'
           java-version: '11'
 
-      - name: Install Unzip and Sed
+      - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip sed
+          sudo apt-get install -y unzip sed wget
 
-      - name: Extract Java Source Code
+      - name: Download Build Tools & Android SDK components
         run: |
-          mkdir -p src
-          unzip -q 2-Full-Source-Code.zip -d src
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mkdir -p android-sdk/cmdline-tools/latest
+          mv cmdline-tools/* android-sdk/cmdline-tools/latest/
+          yes | android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=android-sdk "platforms;android-33" "build-tools;33.0.2"
 
-      - name: Update API URL to egyplayer.com
+      - name: Extract and Update Source Code
         run: |
-          find src -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
-          find src -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          mkdir -p app/src/main/java
+          unzip -q 2-Full-Source-Code.zip -d app/src/main/java
+          
+          # تعديل الروابط داخل ملفات الجافا إلى egyplayer.com
+          find app/src/main/java -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find app/src/main/java -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
-      - name: Compile Java Files to APK structure
+      - name: Create Android Manifest and Gradle Structure
         run: |
-          mkdir -p classes
-          # جمع كافة ملفات الجافا وترجمتها
-          find src -name "*.java" > sources.txt
-          javac -d classes @sources.txt || true
+          cat << 'EOF' > settings.gradle
+          include ':app'
+          EOF
 
-          # إنشاء هيكل ملف APK بسيط وتوقيعه
-          mkdir -p apk_root/assets
-          if [ -d "classes/com" ]; then
-            cd classes && jar cvf ../base.apk . && cd ..
-          else
-            echo "Creating dummy structure"
-            echo "EgyPlayer" > classes/test.txt
-            cd classes && jar cvf ../base.apk . && cd ..
-          fi
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
 
-      - name: Sign APK with Debug Key
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              compileSdkVersion 33
+              defaultConfig {
+                  applicationId "com.egyplayer.iptv"
+                  minSdkVersion 21
+                  targetSdkVersion 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_11
+                  targetCompatibility JavaVersion.VERSION_11
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.code.gson:gson:2.10.1'
+          }
+          EOF
+
+          mkdir -p app/src/main
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.egyplayer.iptv">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="EgyPlayer"
+                  android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+                  <activity android:name=".NormalMainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.action.CATEGORY_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          echo "sdk.dir=$PWD/android-sdk" > local.properties
+
+      - name: Build APK with Gradle
         run: |
-          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keypass android -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000
-          jarsigner -keystore debug.keystore -storepass android -keypass android base.apk androiddebugkey
-          cp base.apk egyplayer-fixed.apk
+          chmod +x gradlew || gradle wrapper --gradle-version 7.5
+          ./gradlew assembleDebug
+
+      - name: Sign APK and Prepare Output
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          cp "$APK_PATH" egyplayer-fixed.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
