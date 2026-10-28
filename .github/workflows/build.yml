@@ -27,17 +27,17 @@ jobs:
           mkdir -p extracted_source
           unzip -q 2-Full-Source-Code.zip -d extracted_source
 
-      - name: Locate Project Path
+      - name: Locate Project Path Deeply
         run: |
-          if [ -f "extracted_source/apktool.yml" ]; then
-            echo "PROJECT_DIR=extracted_source" >> $GITHUB_ENV
+          # البحث العميق عن مسار المجلد الذي يحتوي على ملف apktool.yml
+          FOUND_FILE=$(find extracted_source -name "apktool.yml" | head -n 1)
+          if [ -n "$FOUND_FILE" ]; then
+            PROJECT_DIR=$(dirname "$FOUND_FILE")
+            echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+            echo "Found project at: $PROJECT_DIR"
           else
-            SUBDIR=$(find extracted_source -maxdepth 2 -name "apktool.yml" -exec dirname {} \; | head -n 1)
-            if [ -n "$SUBDIR" ]; then
-              echo "PROJECT_DIR=$SUBDIR" >> $GITHUB_ENV
-            else
-              echo "PROJECT_DIR=extracted_source" >> $GITHUB_ENV
-            fi
+            echo "PROJECT_DIR=extracted_source" >> $GITHUB_ENV
+            echo "Warning: apktool.yml not found, using default."
           fi
 
       - name: Update API URL to egyplayer.com
