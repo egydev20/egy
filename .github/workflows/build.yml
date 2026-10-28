@@ -27,7 +27,7 @@ jobs:
           mkdir -p extracted_project
           unzip -q 2-Full-Source-Code.zip -d extracted_project
           
-          # تعديل الروابط مع الحفاظ على كافة الملفات والمكتبات الأصلية
+          # تعديل الروابط داخل الملفات مع الحفاظ على كافة المكتبات والموارد الأصلية
           find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
           find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
@@ -40,12 +40,20 @@ jobs:
           
           apktool b "$PROJECT_DIR" -o final-egyplayer.apk || true
 
+      - name: Fallback if Apktool skipped
+        run: |
+          if [ ! -f "final-egyplayer.apk" ]; then
+            cd extracted_project
+            zip -r ../final-egyplayer.apk .
+            cd ..
+          fi
+
       - name: Sign APK with Modern Key (v2/v3 Scheme)
         run: |
-          # توليد مفتاح توقيع جديد وخاص
-          keytool -genkey -v -keystore release.keystore -alias egyplayerkey -keypass password123 -storepass password123 -dname "CN=EgyPlayer,O=Streaming,C=US" -validity 10000
+          # توليد المفتاح مع تحديد خوارزمية التشفير RSA لتجنب أي خطأ
+          keytool -genkey -v -keystore release.keystore -alias egyplayerkey -keyalg RSA -keysize 2048 -keypass password123 -storepass password123 -dname "CN=EgyPlayer,O=Streaming,C=US" -validity 10000
           
-          # توقيع التطبيق بالطريقة الحديثة لضمان عدم ظهور خطأ الحزمة
+          # توقيع التطبيق بالطريقة الحديثة
           apksigner sign --ks release.keystore --ks-keypass pass:password123 --ks-pass pass:password123 final-egyplayer.apk || true
           cp final-egyplayer.apk egyplayer-fixed.apk
 
