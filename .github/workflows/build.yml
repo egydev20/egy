@@ -24,12 +24,10 @@ jobs:
 
       - name: Prepare Android Project Structure
         run: |
-          # إنشاء هيكل مشروع أندرويد متكامل وجاهز للـ Gradle
           mkdir -p my_android_project/app/src/main/java
           mkdir -p my_android_project/app/src/main/res/values
-          mkdir -p my_android_project/app/src/main/res/mipmap-hdpi
-
-          # فك ملف السورس الكود الخاص بك في مكان الكلاسات الصحيح
+          
+          # فك ملف السورس الكود في مسار الجافا الصحيح
           unzip -q 2-Full-Source-Code.zip -d my_android_project/app/src/main/java
 
           # تعديل الروابط ديناميكياً داخل ملفات الجافا إلى egyplayer.com
@@ -38,33 +36,20 @@ jobs:
 
           cd my_android_project
 
-          # إنشاء إعدادات الجذر للـ Gradle
           echo "include ':app'" > settings.gradle
 
           cat << 'EOF' > build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
-              }
-          }
+          // Top-level build file
+          EOF
+
+          cat << 'EOF' > app/build.gradle
           allprojects {
               repositories {
                   google()
                   mavenCentral()
-                  maven { url 'https://jitpack.io' }
               }
           }
-          EOF
-
-          # إنشاء إعدادات تطبيق الـ app
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
+          apply plugin: 'com.android.application'
           android {
               compileSdk 33
               defaultConfig {
@@ -86,7 +71,6 @@ jobs:
           }
           EOF
 
-          # إنشاء ملف AndroidManifest الأساسي
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -103,13 +87,10 @@ jobs:
                           <category android:name="android.intent.action.CATEGORY_LAUNCHER" />
                       </intent-filter>
                   </activity>
-                  <activity android:name="com.egyplayer.iptv.TVMainActivity"
-                      android:exported="true" />
               </application>
           </manifest>
           EOF
 
-          # ملف الموارد الأساسي لضمان عدم وجود أخطاء في الترجمة
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <resources>
               <string name="app_name">EgyPlayer</string>
@@ -118,7 +99,7 @@ jobs:
 
           echo "sdk.dir=$PWD/../android-sdk" > local.properties
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK and Gradle 7.5
         run: |
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
@@ -126,11 +107,16 @@ jobs:
           mv cmdline-tools/* android-sdk/cmdline-tools/latest/
           yes | android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=android-sdk "platforms;android-33" "build-tools;33.0.2"
 
-      - name: Build APK via Gradle
+          # تحميل وتثبيت Gradle 7.5 المتوافق تماماً
+          wget -q https://services.gradle.org/distributions/gradle-7.5-bin.zip
+          unzip -q gradle-7.5-bin.zip
+          sudo mv gradle-7.5 /opt/gradle
+          sudo ln -sf /opt/gradle/bin/gradle /usr/local/bin/gradle
+
+      - name: Build APK via Gradle 7.5
         run: |
           cd my_android_project
-          gradle wrapper --gradle-version 7.5
-          ./gradlew assembleDebug
+          gradle clean assembleDebug
 
       - name: Sign APK and Copy to Root
         run: |
