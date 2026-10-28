@@ -1,4 +1,4 @@
-name: Build Working APK
+name: Bypass Expiration Screen in Smali
 
 on:
   push:
@@ -36,21 +36,29 @@ jobs:
         run: |
           apktool d -r original.apk -o decoded_apk
 
-      - name: Update Server URL to egypro Subfolder
+      - name: Update Server URL
         run: |
-          echo "=== توجيه التطبيق إلى المجلد الفرعي egypro ==="
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/api\.php|https://egyplayer.com/egypro/api.php|g' {} + || true
+
+      - name: Bypass Expiration Logic
+        run: |
+          echo "=== البحث عن شاشة انتهاء الصلاحية وتعطيلها ==="
+          # البحث عن السطر البرمجي الذي يعرض رسالة انتهاء التفعيل وإلغاء تفعيله أو جعله يتخخطى الفحص
+          find decoded_apk/smali -type f -name "*.smali" -exec sed -i 's/has expired/is_active_player/g' {} + || true
+          
+          # عكس شروط التحقق الخاصة بالصلاحية (إجبار التطبيق على اعتبار الترخيص صالحاً)
+          find decoded_apk/smali -type f -name "*.smali" -exec sed -i 's/if-eqz/if-nez/g' {} + || true
 
       - name: Rebuild, Zipalign, and Sign APK
         run: |
           apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
           zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-working.apk aligned.apk
-          apksigner verify -v egyplayer-working.apk
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-bypassed.apk aligned.apk
+          apksigner verify -v egyplayer-bypassed.apk
 
-      - name: Upload Working APK
+      - name: Upload Bypassed APK
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-working
-          path: egyplayer-working.apk
+          name: egyplayer-bypassed
+          path: egyplayer-bypassed.apk
