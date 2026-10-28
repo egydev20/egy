@@ -1,11 +1,11 @@
-name: Print API Report Directly
+name: Targeted API Search
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  print_report:
+  targeted_search:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -33,14 +33,13 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Print Exact Server Config & API Calls to Log
+      - name: Search App Source Only (Exclude VLC)
         run: |
-          echo "========================================="
-          echo "=== 1. البحث عن الروابط وملفات الـ API في التطبيق ==="
-          echo "========================================="
-          grep -rnE "api\.php|panel_api|get_live|login|activation|check" decoded_apk/smali*/ | head -n 40 || true
+          echo "=== 1. البحث عن أي روابط http أو https داخل مجلدات التطبيق الأساسية ==="
+          grep -rnE "https?://[a-zA-Z0-9./_-]+" decoded_apk/smali/ | grep -vE "videolan|android|w3|apache|google|schema|example" || true
 
-          echo "========================================="
-          echo "=== 2. البحث عن متغيرات التفعيل (Device ID & Key) ==="
-          echo "========================================="
-          grep -rnE "device_id|device_key|mac_address|expire_date|is_trial" decoded_apk/smali*/ | head -n 40 || true
+          echo "=== 2. البحث عن الكلمات المفتاحية للتفعيل و Device Key ==="
+          grep -rnE "device_key|Device Key|activation|Expire|renewal" decoded_apk/smali/ || true
+
+          echo "=== 3. البحث عن أسماء الملفات أو المسارات (.php أو /api) ==="
+          grep -rnE "\.php|/api/|/v1/" decoded_apk/smali/ || true
