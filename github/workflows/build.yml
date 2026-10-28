@@ -45,3 +45,4 @@ jobs:
         with:
           name: egyplayer-working
           path: egyplayer-fixed.apk
+          # trigger build
