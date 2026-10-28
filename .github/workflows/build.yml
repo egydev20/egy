@@ -32,11 +32,10 @@ jobs:
           find app/src/main/java -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
           find app/src/main/java -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
-      - name: Create Basic Gradle Wrapper & Build Files
+      - name: Setup Correct Gradle Project Files
         run: |
-          # إنشاء ملف إعدادات Gradle الأساسي لكي يتمكن النظام من بناء السورس
           echo "include ':app'" > settings.gradle
-          
+
           cat << 'EOF' > build.gradle
           buildscript {
               repositories {
@@ -59,6 +58,7 @@ jobs:
           }
           EOF
 
+          mkdir -p app
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -87,12 +87,10 @@ jobs:
 
       - name: Build APK with Gradle
         run: |
-          chmod +x gradlew || gradle wrapper
-          ./gradlew assembleDebug || gradle assembleDebug
+          gradle assembleDebug
 
       - name: Sign APK with Debug Key
         run: |
-          # البحث عن ملف الـ APK الناتج وتوقيعه
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -z "$APK_FILE" ]; then
             APK_FILE=$(find . -name "*.apk" | head -n 1)
