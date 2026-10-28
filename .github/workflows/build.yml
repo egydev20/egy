@@ -27,16 +27,25 @@ jobs:
           mkdir -p extracted_source
           unzip -q 2-Full-Source-Code.zip -d extracted_source
 
-      - name: Find Project Directory
+      - name: Locate Project Path
         run: |
-          echo "PROJECT_DIR=$(find extracted_source -name "apktool.yml" -exec dirname {} \; | head -n 1)" >> $GITHUB_ENV
+          if [ -f "extracted_source/apktool.yml" ]; then
+            echo "PROJECT_DIR=extracted_source" >> $GITHUB_ENV
+          else
+            SUBDIR=$(find extracted_source -maxdepth 2 -name "apktool.yml" -exec dirname {} \; | head -n 1)
+            if [ -n "$SUBDIR" ]; then
+              echo "PROJECT_DIR=$SUBDIR" >> $GITHUB_ENV
+            else
+              echo "PROJECT_DIR=extracted_source" >> $GITHUB_ENV
+            fi
+          fi
 
       - name: Update API URL to egyplayer.com
         run: |
           DIR="${{ env.PROJECT_DIR }}"
-          echo "Updating files in: $DIR"
-          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} +
-          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} +
+          echo "Target Directory: $DIR"
+          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
       - name: Rebuild APK
         run: |
