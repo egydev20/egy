@@ -22,23 +22,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget curl sed zipalign apksigner
 
-          # تثبيت أحدث إصدار رسمي من Apktool لضمان التوافق التام
-          sudo wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O /usr/local/bin/apktool
-          sudo wget -q https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O /usr/local/bin/apktool.jar
+          # تحميل أحدث إصدار رسمي من Apktool مباشرة من GitHub Releases لتجنب خطأ exit code 8
+          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
+          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
+          apktool --version
 
       - name: Download Original APK from MediaFire
         run: |
           MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
-          DIRECT_URL=$(curl -sL "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
+          DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
           
           if [ -z "$DIRECT_URL" ]; then
-            echo "Failed to extract direct URL"
+            echo "Failed to extract direct URL from MediaFire"
             exit 1
           fi
           
           echo "Downloading original APK from: $DIRECT_URL"
-          wget -q --show-progress -O original.apk "$DIRECT_URL"
+          curl -L -o original.apk "$DIRECT_URL"
           ls -lh original.apk
 
       - name: Decompile Code Only (Keep Original Resources & Manifest Intact)
@@ -71,7 +72,7 @@ jobs:
           # إنشاء مفتاح التوقيع
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
 
-          # توقيع التطبيق بجميع إصدارات التوقيع (v1 + v2 + v3) ليعمل على كل الهواتف والشاشات
+          # توقيع التطبيق بجميع إصدارات التوقيع (v1 + v2 + v3)
           apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-fixed.apk aligned.apk
 
           # التحقق من صحة التوقيع والحجم النهائي
