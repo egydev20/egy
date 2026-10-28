@@ -20,20 +20,19 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip sed apktool
+          sudo apt-get install -y unzip sed apktool apksigner
 
-      - name: Extract Full Source & Keep All Assets
+      - name: Extract Full Source & Update API
         run: |
           mkdir -p extracted_project
           unzip -q 2-Full-Source-Code.zip -d extracted_project
           
-          # البحث عن مكان تواجد الملفات واللغات وتعديل السيرفر بدقة مع الحفاظ على المساحة والمكتبات
-          find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" -o -name "*.smali" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
-          find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" -o -name "*.smali"  \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          # تعديل الروابط مع الحفاظ على كافة الملفات والمكتبات الأصلية
+          find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find extracted_project -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" -o -name "*.json" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
-      - name: Rebuild Original APK with Apktool
+      - name: Rebuild APK with Apktool
         run: |
-          # تحديد المجلد الذي يحتوي على apktool.yml أو بناء المشروع كاملاً مع موارده ومكتباته الأصلية
           PROJECT_DIR=$(find extracted_project -name "apktool.yml" -exec dirname {} \; | head -n 1)
           if [ -z "$PROJECT_DIR" ]; then
             PROJECT_DIR="extracted_project"
@@ -41,18 +40,13 @@ jobs:
           
           apktool b "$PROJECT_DIR" -o final-egyplayer.apk || true
 
-      - name: Fallback Build if needed
+      - name: Sign APK with Modern Key (v2/v3 Scheme)
         run: |
-          if [ ! -f "final-egyplayer.apk" ]; then
-            cd extracted_project
-            zip -r ../final-egyplayer.apk .
-            cd ..
-          fi
-
-      - name: Sign APK with Debug Key
-        run: |
-          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keypass android -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 || true
-          jarsigner -keystore debug.keystore -storepass android -keypass android final-egyplayer.apk androiddebugkey || true
+          # توليد مفتاح توقيع جديد وخاص
+          keytool -genkey -v -keystore release.keystore -alias egyplayerkey -keypass password123 -storepass password123 -dname "CN=EgyPlayer,O=Streaming,C=US" -validity 10000
+          
+          # توقيع التطبيق بالطريقة الحديثة لضمان عدم ظهور خطأ الحزمة
+          apksigner sign --ks release.keystore --ks-keypass pass:password123 --ks-pass pass:password123 final-egyplayer.apk || true
           cp final-egyplayer.apk egyplayer-fixed.apk
 
       - name: Upload APK Artifact
