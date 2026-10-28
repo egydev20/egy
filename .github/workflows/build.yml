@@ -1,11 +1,11 @@
-name: Inspect APK API URLs and Endpoints
+name: Extract Exact API Structure
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  inspect:
+  extract_api:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -26,29 +26,36 @@ jobs:
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
 
-      - name: Download Original APK
+      - name: Download & Decompile APK
         run: |
           MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
           DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
           curl -L -o original.apk "$DIRECT_URL"
-
-      - name: Decompile and Search All URLs & API Endpoints
-        run: |
           apktool d -r original.apk -o decoded_apk
 
-          echo "========================================="
-          echo "1. جميع الروابط (http/https) داخل ملفات Smali:"
-          echo "========================================="
-          grep -rnE "https?://" decoded_apk/smali*/ | grep -vE "schemas\.android\.com|www\.w3\.org| google\.com|apache\.org|xmlpull\.org|example\.com" || true
+      - name: Find Exact Server Config & API Calls
+        run: |
+          {
+            echo "=== 1. أسماء حزم ومجلدات التطبيق الأساسية ==="
+            find decoded_apk/smali* -maxdepth 4 -type d
 
-          echo "========================================="
-          echo "2. البحث عن الكود المسؤول عن رسالة انتهاء التفعيل:"
-          echo "========================================="
-          grep -rn -C 15 "Activation for" decoded_apk/smali*/ || true
-          grep -rn -C 15 "device_key" decoded_apk/smali*/ || true
-          grep -rn -C 15 "mac_address" decoded_apk/smali*/ || true
+            echo -e "\n=== 2. البحث عن ملفات الإعدادات والاتصال (Retrofit / OkHttp / Volley / AsyncTask) ==="
+            grep -rnE "POST|GET|FormUrlEncoded|Field\(|baseUrl|api\.php|panel_api" decoded_apk/smali*/ | head -n 100 || true
 
-          echo "========================================="
-          echo "3. فحص مكتبات الـ C++ (.so) لو كان الرابط مخفياً بداخلها:"
-          echo "========================================="
-          find decoded_apk/lib -name "*.so" -exec sh -c 'echo "--- File: $1 ---"; strings "$1" | grep -E "https?://|api\.php|egyplayer"' _ {} \; || true
+            echo -e "\n=== 3. البحث عن المتغيرات المرسلة في شاشة التفعيل ==="
+            grep -rnE "device_id|device_key|mac_address|expire_date|is_trial|urls|playlist" decoded_apk/smali*/ | head -n 120 || true
+
+            echo -e "\n=== 4. البحث عن نصوص Base64 المشتبه بكونها روابط سيرفر ==="
+            grep -rnE 'const-string [vp0-9]+, "aHR0c[A-Za-z0-9+/=]+"' decoded_apk/smali*/ || true
+
+            echo -e "\n=== 5. فحص مكتبات الـ C++ الصغيرة فقط (باستثناء VLC) ==="
+            find decoded_apk/lib -name "*.so" ! -name "*vlc*" ! -name "*ffmpeg*" ! -name "*crypto*" ! -name "*ssl*" -exec sh -c 'echo "--- File: $1 ---"; strings "$1" | grep -E "http|api|/[a-z_]+\.php|/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+" | head -n 60' _ {} \; || true
+          } > api_report.txt
+
+          cat api_report.txt
+
+      - name: Upload API Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-details
+          path: api_report.txt
