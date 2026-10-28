@@ -22,21 +22,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y apktool unzip sed
 
+      - name: Inspect ZIP Contents
+        run: |
+          echo "=== محتويات ملف الـ ZIP ==="
+          unzip -l 2-Full-Source-Code.zip
+
       - name: Extract Source Code
         run: |
           mkdir -p extracted_source
           unzip -q 2-Full-Source-Code.zip -d extracted_source
-          ls -la extracted_source
 
       - name: Rebuild APK
         run: |
-          # سنقوم بالبحث الفوري عن مكان apktool.yml والبناء منه مباشرة
-          PROJECT_PATH=$(find extracted_source -name "apktool.yml" -exec dirname {} \; | head -n 1)
-          if [ -z "$PROJECT_PATH" ]; then
-            PROJECT_PATH="extracted_source"
+          # البحث الشامل عن مكان apktool.yml وبناء التطبيق منه فوراً
+          PROJECT_DIR=$(find extracted_source -name "apktool.yml" -exec dirname {} \; | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "خطأ: لم يتم العثور على ملف apktool.yml، سنستخدم المجلد الحالي"
+            PROJECT_DIR="extracted_source"
+          else
+            echo "تم العثور على المشروع في مسار: $PROJECT_DIR"
           fi
-          echo "Building from path: $PROJECT_PATH"
-          apktool b "$PROJECT_PATH" -o egyplayer-fixed.apk
+          
+          # تحديث روابط السيرفر داخل المشروع المكتشف
+          find "$PROJECT_DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find "$PROJECT_DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+
+          # إعادة بناء الـ APK
+          apktool b "$PROJECT_DIR" -o egyplayer-fixed.apk
 
       - name: Sign APK with Debug Key
         run: |
