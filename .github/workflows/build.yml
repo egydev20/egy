@@ -1,11 +1,11 @@
-name: Targeted API Search
+name: Deep Search All Strings
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  targeted_search:
+  search_strings:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -33,13 +33,11 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Search App Source Only (Exclude VLC)
+      - name: Scan All Strings & URLs in Smali
         run: |
-          echo "=== 1. البحث عن أي روابط http أو https داخل مجلدات التطبيق الأساسية ==="
-          grep -rnE "https?://[a-zA-Z0-9./_-]+" decoded_apk/smali/ | grep -vE "videolan|android|w3|apache|google|schema|example" || true
-
-          echo "=== 2. البحث عن الكلمات المفتاحية للتفعيل و Device Key ==="
-          grep -rnE "device_key|Device Key|activation|Expire|renewal" decoded_apk/smali/ || true
-
-          echo "=== 3. البحث عن أسماء الملفات أو المسارات (.php أو /api) ==="
-          grep -rnE "\.php|/api/|/v1/" decoded_apk/smali/ || true
+          echo "=== البحث عن أي روابط أو نطاقات داخل ملفات الـ smali ==="
+          grep -rnE "\"http[s]?://[a-zA-Z0-9./_-]+\"" decoded_apk/smali/ || true
+          
+          echo "=== البحث عن أي كلمات مفتاحية تخص الـ API أو السيرفر ==="
+          grep -rnE "\"/[a-zA-Z0-9_.-]+\.php\"" decoded_apk/smali/ || true
+          grep -rnE "\"/[a-zA-Z0-9_.-]+/api\"" decoded_apk/smali/ || true
