@@ -38,7 +38,14 @@ jobs:
 
           echo "include ':app'" > settings.gradle
 
-          # ملف الـ build.gradle الرئيسي لتعريف مستودعات الـ Android Gradle Plugin
+          # إضافة تفعيل AndroidX و Jetifier لحل مشكلة التبعيات نهائياً
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+
+          # ملف الـ build.gradle الرئيسي
           cat << 'EOF' > build.gradle
           buildscript {
               repositories {
