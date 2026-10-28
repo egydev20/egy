@@ -32,37 +32,18 @@ jobs:
           find app/src/main/java -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
           find app/src/main/java -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
 
-      - name: Setup Correct Gradle Project Files
+      - name: Setup Gradle Project
         run: |
           echo "include ':app'" > settings.gradle
 
           cat << 'EOF' > build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://jitpack.io' }
-              }
-          }
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
+          // Top-level build file
           EOF
 
           mkdir -p app
           cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
+          apply plugin: 'com.android.application'
+
           android {
               compileSdkVersion 33
               defaultConfig {
@@ -77,17 +58,51 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
+
+          repositories {
+              google()
+              mavenCentral()
+          }
+
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
               implementation 'com.google.code.gson:gson:2.10.1'
           }
           EOF
 
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.egyplayer.iptv">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="EgyPlayer"
+                  android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+                  <activity android:name=".NormalMainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.action.CATEGORY_LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Build APK with Gradle
+      - name: Download and Install Gradle 7.5
         run: |
-          gradle assembleDebug
+          wget https://services.gradle.org/distributions/gradle-7.5-bin.zip
+          unzip -q gradle-7.5-bin.zip
+          sudo mv gradle-7.5 /opt/gradle
+          sudo ln -s /opt/gradle/bin/gradle /usr/local/bin/gradle
+
+      - name: Build APK with Gradle 7.5
+        run: |
+          gradle clean assembleDebug
 
       - name: Sign APK with Debug Key
         run: |
