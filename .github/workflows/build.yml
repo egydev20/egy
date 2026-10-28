@@ -38,17 +38,27 @@ jobs:
 
           echo "include ':app'" > settings.gradle
 
+          # ملف الـ build.gradle الرئيسي لتعريف مستودعات الـ Android Gradle Plugin
           cat << 'EOF' > build.gradle
-          // Top-level build file
-          EOF
-
-          cat << 'EOF' > app/build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
           allprojects {
               repositories {
                   google()
                   mavenCentral()
               }
           }
+          EOF
+
+          # ملف الـ build.gradle الداخلي للتطبيق
+          cat << 'EOF' > app/build.gradle
           apply plugin: 'com.android.application'
           android {
               compileSdk 33
@@ -107,7 +117,7 @@ jobs:
           mv cmdline-tools/* android-sdk/cmdline-tools/latest/
           yes | android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=android-sdk "platforms;android-33" "build-tools;33.0.2"
 
-          # تحميل وتثبيت Gradle 7.5 المتوافق تماماً
+          # تحميل وتثبيت Gradle 7.5
           wget -q https://services.gradle.org/distributions/gradle-7.5-bin.zip
           unzip -q gradle-7.5-bin.zip
           sudo mv gradle-7.5 /opt/gradle
