@@ -1,11 +1,11 @@
-name: Extract Exact API Structure
+name: Print API Report Directly
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  extract_api:
+  print_report:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,7 +20,7 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget curl sed binutils
+          sudo apt-get install -y wget curl sed
 
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
@@ -33,29 +33,14 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Find Exact Server Config & API Calls
+      - name: Print Exact Server Config & API Calls to Log
         run: |
-          {
-            echo "=== 1. أسماء حزم ومجلدات التطبيق الأساسية ==="
-            find decoded_apk/smali* -maxdepth 4 -type d
+          echo "========================================="
+          echo "=== 1. البحث عن الروابط وملفات الـ API في التطبيق ==="
+          echo "========================================="
+          grep -rnE "api\.php|panel_api|get_live|login|activation|check" decoded_apk/smali*/ | head -n 40 || true
 
-            echo -e "\n=== 2. البحث عن ملفات الإعدادات والاتصال (Retrofit / OkHttp / Volley / AsyncTask) ==="
-            grep -rnE "POST|GET|FormUrlEncoded|Field\(|baseUrl|api\.php|panel_api" decoded_apk/smali*/ | head -n 100 || true
-
-            echo -e "\n=== 3. البحث عن المتغيرات المرسلة في شاشة التفعيل ==="
-            grep -rnE "device_id|device_key|mac_address|expire_date|is_trial|urls|playlist" decoded_apk/smali*/ | head -n 120 || true
-
-            echo -e "\n=== 4. البحث عن نصوص Base64 المشتبه بكونها روابط سيرفر ==="
-            grep -rnE 'const-string [vp0-9]+, "aHR0c[A-Za-z0-9+/=]+"' decoded_apk/smali*/ || true
-
-            echo -e "\n=== 5. فحص مكتبات الـ C++ الصغيرة فقط (باستثناء VLC) ==="
-            find decoded_apk/lib -name "*.so" ! -name "*vlc*" ! -name "*ffmpeg*" ! -name "*crypto*" ! -name "*ssl*" -exec sh -c 'echo "--- File: $1 ---"; strings "$1" | grep -E "http|api|/[a-z_]+\.php|/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+" | head -n 60' _ {} \; || true
-          } > api_report.txt
-
-          cat api_report.txt
-
-      - name: Upload API Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-details
-          path: api_report.txt
+          echo "========================================="
+          echo "=== 2. البحث عن متغيرات التفعيل (Device ID & Key) ==="
+          echo "========================================="
+          grep -rnE "device_id|device_key|mac_address|expire_date|is_trial" decoded_apk/smali*/ | head -n 40 || true
