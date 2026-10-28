@@ -43,27 +43,21 @@ jobs:
         run: |
           cd project_source
           
-          # التأكد من وجود ملف AndroidManifest.xml، وإذا لم يكن موجوداً نقوم بإنشائه لضمان قبول الحزمة
           if [ ! -f "AndroidManifest.xml" ]; then
-            cat << 'EOF' > AndroidManifest.xml
-            <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-                package="com.egyplayer.iptv"
-                android:versionCode="1"
-                android:versionName="1.0">
-                <uses-permission android:name="android.permission.INTERNET" />
-                <application android:label="EgyPlayer" android:allowBackup="true">
-                    <activity android:name=".NormalMainActivity" android:exported="true">
-                        <intent-filter>
-                            <action android:name="android.intent.action.MAIN" />
-                            <category android:name="android.intent.action.CATEGORY_LAUNCHER" />
-                        </intent-filter>
-                    </activity>
-                </application>
-            </manifest>
-            EOF
+            echo '<?xml version="1.0" encoding="utf-8"?>' > AndroidManifest.xml
+            echo '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.egyplayer.iptv" android:versionCode="1" android:versionName="1.0">' >> AndroidManifest.xml
+            echo '    <uses-permission android:name="android.permission.INTERNET" />' >> AndroidManifest.xml
+            echo '    <application android:label="EgyPlayer" android:allowBackup="true">' >> AndroidManifest.xml
+            echo '        <activity android:name=".NormalMainActivity" android:exported="true">' >> AndroidManifest.xml
+            echo '            <intent-filter>' >> AndroidManifest.xml
+            echo '                <action android:name="android.intent.action.MAIN" />' >> AndroidManifest.xml
+            echo '                <category android:name="android.intent.action.CATEGORY_LAUNCHER" />' >> AndroidManifest.xml
+            echo '            </intent-filter>' >> AndroidManifest.xml
+            echo '        </activity>' >> AndroidManifest.xml
+            echo '    </application>' >> AndroidManifest.xml
+            echo '</manifest>' >> AndroidManifest.xml
           fi
 
-          # ضغط المشروع بالكامل بالهيكل الصحيح لتجنب خطأ الحزمة
           zip -r ../final-app.apk .
           cd ..
 
