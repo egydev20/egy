@@ -1,11 +1,11 @@
-name: Patch Original APK and Sign
+name: Inspect APK API URLs and Endpoints
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -17,70 +17,38 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Latest Apktool & Android Signing Tools
+      - name: Install Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget curl sed zipalign apksigner
+          sudo apt-get install -y wget curl sed binutils
 
-          # تحميل أحدث إصدار رسمي من Apktool مباشرة من GitHub Releases لتجنب خطأ exit code 8
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          apktool --version
 
-      - name: Download Original APK from MediaFire
+      - name: Download Original APK
         run: |
           MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
           DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
-          
-          if [ -z "$DIRECT_URL" ]; then
-            echo "Failed to extract direct URL from MediaFire"
-            exit 1
-          fi
-          
-          echo "Downloading original APK from: $DIRECT_URL"
           curl -L -o original.apk "$DIRECT_URL"
-          ls -lh original.apk
 
-      - name: Decompile Code Only (Keep Original Resources & Manifest Intact)
+      - name: Decompile and Search All URLs & API Endpoints
         run: |
-          # الخيار -r يمنع فك الموارد والـ Manifest ويحافظ على سلامة الحزمة 100%
           apktool d -r original.apk -o decoded_apk
 
-      - name: Update API URL to egyplayer.com
-        run: |
-          echo "=== البحث عن روابط api.php القديمة قبل التعديل ==="
-          grep -rn "api\.php" decoded_apk/ || true
+          echo "========================================="
+          echo "1. جميع الروابط (http/https) داخل ملفات Smali:"
+          echo "========================================="
+          grep -rnE "https?://" decoded_apk/smali*/ | grep -vE "schemas\.android\.com|www\.w3\.org| google\.com|apache\.org|xmlpull\.org|example\.com" || true
 
-          # استبدال أي رابط ينتهي بـ /api.php بالرابط الجديد https://egyplayer.com/api.php
-          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/api\.php|https://egyplayer.com/api.php|g' {} +
+          echo "========================================="
+          echo "2. البحث عن الكود المسؤول عن رسالة انتهاء التفعيل:"
+          echo "========================================="
+          grep -rn -C 15 "Activation for" decoded_apk/smali*/ || true
+          grep -rn -C 15 "device_key" decoded_apk/smali*/ || true
+          grep -rn -C 15 "mac_address" decoded_apk/smali*/ || true
 
-          # استبدال أي إشارة قديمة لنطاقات أخرى مرتبطة بـ egyplayer احتياطياً
-          find decoded_apk -type f -name "*.smali" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} +
-
-          echo "=== التحقق من الروابط بعد التعديل ==="
-          grep -rn "egyplayer\.com" decoded_apk/ || true
-
-      - name: Rebuild, Zipalign, and Sign APK
-        run: |
-          # إعادة حزم التطبيق مع استخدام --use-aapt2
-          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
-
-          # محاذاة الملفات على 4 بايت (شرط أساسي في أندرويد لمنع خطأ تحليل الحزمة)
-          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-
-          # إنشاء مفتاح التوقيع
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-
-          # توقيع التطبيق بجميع إصدارات التوقيع (v1 + v2 + v3)
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-fixed.apk aligned.apk
-
-          # التحقق من صحة التوقيع والحجم النهائي
-          apksigner verify -v egyplayer-fixed.apk
-          ls -lh egyplayer-fixed.apk
-
-      - name: Upload Ready APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: egyplayer-working
-          path: egyplayer-fixed.apk
+          echo "========================================="
+          echo "3. فحص مكتبات الـ C++ (.so) لو كان الرابط مخفياً بداخلها:"
+          echo "========================================="
+          find decoded_apk/lib -name "*.so" -exec sh -c 'echo "--- File: $1 ---"; strings "$1" | grep -E "https?://|api\.php|egyplayer"' _ {} \; || true
