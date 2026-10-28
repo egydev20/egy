@@ -1,4 +1,4 @@
-name: Build Working EgyPlayer APK
+name: Build Full EgyPlayer APK
 
 on:
   push:
@@ -17,77 +17,126 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Tools
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip sed aapt apksigner
+          sudo apt-get install -y unzip sed wget
 
-      - name: Extract and Update Source Code
+      - name: Prepare Android Project Structure
         run: |
-          mkdir -p src
-          unzip -q 2-Full-Source-Code.zip -d src
-          
-          # تعديل الروابط داخل ملفات الجافا إلى egyplayer.com
-          find src -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
-          find src -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          # إنشاء هيكل مشروع أندرويد متكامل وجاهز للـ Gradle
+          mkdir -p my_android_project/app/src/main/java
+          mkdir -p my_android_project/app/src/main/res/values
+          mkdir -p my_android_project/app/src/main/res/mipmap-hdpi
 
-      - name: Compile and Package Real APK
-        run: |
-          mkdir -p build_apk/classes
-          find src -name "*.java" > sources.txt
-          
-          # ترجمة ملفات الجافا
-          javac -d build_apk/classes @sources.txt || true
-          
-          # تحويل كلاسات الجافا إلى dex
-          cd build_apk
-          jar cvf classes.jar -C classes .
-          
-          # تحميل أداة d8 للتحويل إذا لم تكن موجودة وتوليد classes.dex
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip
-          yes | cmdline-tools/bin/sdkmanager --sdk_root=sdk "build-tools;33.0.2" > /dev/null 2>&1 || true
-          
-          D8_TOOL=$(find sdk -name "d8" | head -n 1)
-          if [ -z "$D8_TOOL" ]; then
-            D8_TOOL="d8"
-          fi
-          
-          $D8_TOOL classes.jar --output . || true
-          
-          # إنشاء ملف AndroidManifest أساسي وتعبئة الحزمة
-          cat << 'EOF' > AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.egyplayer.iptv" android:versionCode="1" android:versionName="1.0">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <application android:label="EgyPlayer">
-                  <activity android:name=".NormalMainActivity" android:exported="true">
+          # فك ملف السورس الكود الخاص بك في مكان الكلاسات الصحيح
+          unzip -q 2-Full-Source-Code.zip -d my_android_project/app/src/main/java
+
+          # تعديل الروابط ديناميكياً داخل ملفات الجافا إلى egyplayer.com
+          find my_android_project/app/src/main/java -type f -name "*.java" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find my_android_project/app/src/main/java -type f -name "*.java" -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+
+          cd my_android_project
+
+          # إنشاء إعدادات الجذر للـ Gradle
+          echo "include ':app'" > settings.gradle
+
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url 'https://jitpack.io' }
+              }
+          }
+          EOF
+
+          # إنشاء إعدادات تطبيق الـ app
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.egyplayer.iptv"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.code.gson:gson:2.10.1'
+              implementation 'com.google.android.material:material:1.8.0'
+          }
+          EOF
+
+          # إنشاء ملف AndroidManifest الأساسي
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.egyplayer.iptv">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="EgyPlayer"
+                  android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+                  <activity android:name="com.egyplayer.iptv.NormalMainActivity"
+                      android:exported="true">
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.action.CATEGORY_LAUNCHER"/>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.action.CATEGORY_LAUNCHER" />
                       </intent-filter>
                   </activity>
+                  <activity android:name="com.egyplayer.iptv.TVMainActivity"
+                      android:exported="true" />
               </application>
           </manifest>
           EOF
-          
-          # تجميع الموارد وحزم الـ APK الحقيقي
-          mkdir -p res
-          aapt package -f -M AndroidManifest.xml -S res -I $(find sdk -name "android.jar" | head -n 1) -F unsigned.apk || true
-          
-          if [ -f "unsigned.apk" ]; then
-            zip -u unsigned.apk classes.dex
-            cp unsigned.apk ../egyplayer-fixed.apk
-          else
-            # إنشاء حزمة بديلة مضمونة التثبيت في حال عدم توفر الـ aapt
-            echo "Creating standard valid APK"
-            zip -r ../egyplayer-fixed.apk classes.dex AndroidManifest.xml
-          fi
-          cd ..
 
-      - name: Sign APK with Debug Key
+          # ملف الموارد الأساسي لضمان عدم وجود أخطاء في الترجمة
+          cat << 'EOF' > app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">EgyPlayer</string>
+          </resources>
+          EOF
+
+          echo "sdk.dir=$PWD/../android-sdk" > local.properties
+
+      - name: Setup Android SDK
         run: |
-          keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keypass android -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 || true
-          jarsigner -keystore debug.keystore -storepass android -keypass android egyplayer-fixed.apk androiddebugkey || true
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mkdir -p android-sdk/cmdline-tools/latest
+          mv cmdline-tools/* android-sdk/cmdline-tools/latest/
+          yes | android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=android-sdk "platforms;android-33" "build-tools;33.0.2"
+
+      - name: Build APK via Gradle
+        run: |
+          cd my_android_project
+          gradle wrapper --gradle-version 7.5
+          ./gradlew assembleDebug
+
+      - name: Sign APK and Copy to Root
+        run: |
+          cd my_android_project
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          cp "$APK_PATH" ../egyplayer-fixed.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
