@@ -1,4 +1,4 @@
-name: Bypass Expiration and Sign APK
+name: Build Clean Stable APK
 
 on:
   push:
@@ -36,29 +36,22 @@ jobs:
         run: |
           apktool d -r original.apk -o decoded_apk
 
-      - name: Bypass Expiration Check in Smali
+      - name: Update API URL Safely
         run: |
-          echo "=== البحث عن الملف المسؤول عن انتهاء التفعيل ==="
-          grep -rn "has expired" decoded_apk/smali/ || true
-
-          # تعديل أي دالة تفحص انتهاء التفعيل أو إرجاع قيمة صحيحة لدوال التحقق
-          # سنقوم بالبحث عن الكلاسات التي تحتوي على فحص التفعيل وتعديلها لتتخطى الشاشة
-          find decoded_apk/smali -type f -name "*.smali" -exec sed -i 's/const\/4 v[0-9], 0x0/const\/4 v0, 0x1/g' {} + || true
-
-          echo "=== تحديث رابط السيرفر الداخلي ==="
+          echo "=== تحديث رابط السيرفر فقط دون المساس بمنطق التطبيق ==="
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/api\.php|https://egyplayer.com/api.php|g' {} + || true
-          find decoded_apk -type f -name "*.smali" -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} + || true
+          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https://egyplayer\.com|https://egyplayer.com|g' {} + || true
 
       - name: Rebuild, Zipalign, and Sign APK
         run: |
           apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
           zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-fixed.apk aligned.apk
-          apksigner verify -v egyplayer-fixed.apk
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-stable.apk aligned.apk
+          apksigner verify -v egyplayer-stable.apk
 
-      - name: Upload Ready APK
+      - name: Upload Stable APK
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-working
-          path: egyplayer-fixed.apk
+          name: egyplayer-stable
+          path: egyplayer-stable.apk
