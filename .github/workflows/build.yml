@@ -24,16 +24,23 @@ jobs:
 
       - name: Extract Source Code
         run: |
+          mkdir -p extracted_source
           unzip -q 2-Full-Source-Code.zip -d extracted_source
+
+      - name: Find Project Directory
+        run: |
+          echo "PROJECT_DIR=$(find extracted_source -name "apktool.yml" -exec dirname {} \; | head -n 1)" >> $GITHUB_ENV
 
       - name: Update API URL to egyplayer.com
         run: |
-          find extracted_source -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} +
-          find extracted_source -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} +
+          DIR="${{ env.PROJECT_DIR }}"
+          echo "Updating files in: $DIR"
+          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|http://.*egyplayer\.com|https://egyplayer.com|g' {} +
+          find "$DIR" -type f \( -name "*.java" -o -name "*.smali" -o -name "*.xml" \) -exec sed -i 's|https://.*egyplayer\.com|https://egyplayer.com|g' {} +
 
       - name: Rebuild APK
         run: |
-          apktool b extracted_source -o egyplayer-fixed.apk
+          apktool b "${{ env.PROJECT_DIR }}" -o egyplayer-fixed.apk
 
       - name: Sign APK with Debug Key
         run: |
