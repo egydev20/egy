@@ -1,4 +1,4 @@
-name: Inspect Web Assets and x0
+name: Filter Short API Strings
 
 on:
   push:
@@ -22,16 +22,13 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Extract x0 and Web Assets
+      - name: Print Only Short Summary
         run: |
-          echo "=== 1. قائمة الملفات داخل assets/Web ==="
-          find decoded_apk/assets -type f || true
+          echo "=== 1. مسارات الـ API داخل x0.smali (مختصر جداً) ==="
+          grep -n "const-string" decoded_apk/smali/c/b/x0.smali | grep -iE "API/|http|mac|status|expire|date|key|token|login|device|sub|channel|playlist|url" || true
 
-          echo -e "\n=== 2. جميع النصوص والمسارات داخل x0.smali ==="
-          grep -n "const-string" decoded_apk/smali/c/b/x0.smali || true
+          echo -e "\n=== 2. مسارات الـ API داخل f1.smali و z0.smali ==="
+          grep -n "const-string" decoded_apk/smali/c/b/f1.smali decoded_apk/smali/c/b/z0.smali | grep -iE "API/|http|mac|status|expire|date|key|token|login|device|sub| result|data|code" || true
 
-          echo -e "\n=== 3. جميع النصوص داخل z0.smali و s0.smali ==="
-          grep -n "const-string" decoded_apk/smali/c/b/z0.smali decoded_apk/smali/c/b/s0.smali || true
-
-          echo -e "\n=== 4. البحث عن الروابط أو API داخل ملفات Web ==="
-          grep -rnE "http|API/|api|egyplayer|Expired|Status" decoded_apk/assets/ || true
+          echo -e "\n=== 3. قائمة أسماء ملفات الـ Web ==="
+          find decoded_apk/assets/Web -maxdepth 2 || true
