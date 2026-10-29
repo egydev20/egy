@@ -1,4 +1,4 @@
-name: Deep Smali String Inspection
+name: Extract Exact API Endpoints
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget curl sed zipalign apksigner
+          sudo apt-get install -y wget curl sed
 
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
@@ -34,28 +34,15 @@ jobs:
 
       - name: Decompile APK
         run: |
-          apktool d -f original.apk -o decoded_apk
+          apktool d -r original.apk -o decoded_apk
 
-      - name: Extract App Specific URLs and Packages
+      - name: Dump c/b Package Strings
         run: |
-          {
-            echo "=== 1. هيكل مجلدات الكود البرمجي للتطبيق (Packages) ==="
-            find decoded_apk/smali* -maxdepth 4 -type d | grep -vE "androidx|org/videolan|com/google|kotlin|kotlinx|okhttp3|retrofit2|com/bumptech" || true
+          echo "=== 1. جميع النصوص والمسارات داخل ملف الاتصال الرئيسي x0.smali ==="
+          grep -n "const-string" decoded_apk/smali/c/b/x0.smali || true
 
-            echo -e "\n=== 2. جميع الروابط الصريحة (http/https) داخل الكود ==="
-            grep -rn "const-string" decoded_apk/smali* | grep -iE "http://|https://" | grep -vE "schemas.android.com|w3.org|apache.org|google.com|xml.org|github.com" || true
+          echo -e "\n=== 2. جميع النصوص داخل ملف f1.smali ==="
+          grep -n "const-string" decoded_apk/smali/c/b/f1.smali || true
 
-            echo -e "\n=== 3. مسارات الـ API وملفات PHP أو JSON داخل الكود ==="
-            grep -rn "const-string" decoded_apk/smali* | grep -iE "\.php|api/|/api|egyplayer|ibo|mac|expire|device_key" | grep -vE "androidx|org/videolan|com/google" || true
-
-            echo -e "\n=== 4. فحص الروابط في ملفات الموارد (strings.xml) ==="
-            grep -rnE "http|egyplayer|api" decoded_apk/res/values* || true
-          } > app_urls_report.txt
-
-          cat app_urls_report.txt
-
-      - name: Upload Clean Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-urls-report
-          path: app_urls_report.txt
+          echo -e "\n=== 3. أي مسارات أخرى في مجلد c/b ==="
+          grep -rn "const-string" decoded_apk/smali/c/b/ | grep -vE "x0\.smali|f1\.smali" | head -n 200 || true
