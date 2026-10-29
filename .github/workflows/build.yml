@@ -1,4 +1,4 @@
-name: Ultimate Comprehensive Build
+name: Build Isolated App Release
 
 on:
   push:
@@ -36,26 +36,23 @@ jobs:
         run: |
           apktool d -r original.apk -o decoded_apk
 
-      - name: Comprehensive API Routing & Replacement
+      - name: Force Route All Requests to egypro/api
         run: |
-          echo "=== استبدال وتوجيه كافة مسارات وروابط الـ API إلى سيرفرك ==="
-          
-          # استبدال أي رابط ينتهي بـ api.php إلى مسارك الجديد
+          echo "=== توجيه شامل وثابت لروابط التطبيق نحو مجلد الـ API العازل ==="
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/api\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
-          
-          # استبدال نطاق الموقع القديم بالكامل ليوجه كل طلباته إلى مجلدك
-          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://egyplayer\.com[^"'\''[:space:]]*|https://egyplayer.com/egypro/api/api.php|g' {} + || true
+          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/login\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
+          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/check\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
 
       - name: Rebuild, Align and Sign APK
         run: |
           apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
           zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-ultimate.apk aligned.apk
-          apksigner verify -v egyplayer-ultimate.apk
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-isolated.apk aligned.apk
+          apksigner verify -v egyplayer-isolated.apk
 
-      - name: Upload Ultimate Artifact
+      - name: Upload Isolated Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-ultimate-release
-          path: egyplayer-ultimate.apk
+          name: egyplayer-isolated-release
+          path: egyplayer-isolated.apk
