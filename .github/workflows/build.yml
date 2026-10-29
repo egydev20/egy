@@ -1,4 +1,4 @@
-name: Build Isolated App Release
+name: Inspect and Build App
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
       - name: Install Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget curl sed zipalign apksigner
+          sudo apt-get install -y wget curl sed zipalign apksigner binutils
 
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
@@ -36,9 +36,23 @@ jobs:
         run: |
           apktool d -r original.apk -o decoded_apk
 
+      - name: Inspect App Connection Files
+        run: |
+          {
+            echo "=== 1. قائمة ملفات المكتبات الأصلية (.so) ==="
+            find decoded_apk/lib -type f -name "*.so" || true
+
+            echo -e "\n=== 2. كافة الروابط والمسارات البرمجية داخل Smali ==="
+            grep -rnE "http://|https://|\.php|api/|login|device|check" decoded_apk/smali* | grep -v "schemas.android.com" | grep -v "w3.org" | grep -v "apache.org" | grep -v "google.com" | head -n 150 || true
+
+            echo -e "\n=== 3. النصوص والروابط المخفية داخل ملفات .so ==="
+            find decoded_apk/lib -type f -name "*.so" -exec strings {} + | grep -iE "http|\.php|egyplayer|api|base_url" | head -n 100 || true
+          } > connection_report.txt
+
+          cat connection_report.txt
+
       - name: Force Route All Requests to egypro/api
         run: |
-          echo "=== توجيه شامل وثابت لروابط التطبيق نحو مجلد الـ API العازل ==="
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/api\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/login\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
           find decoded_apk -type f -name "*.smali" -exec sed -i 's|https\?://[^"'\''[:space:]]*/check\.php|https://egyplayer.com/egypro/api/api.php|g' {} + || true
@@ -51,7 +65,13 @@ jobs:
           apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-isolated.apk aligned.apk
           apksigner verify -v egyplayer-isolated.apk
 
-      - name: Upload Isolated Artifact
+      - name: Upload Connection Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: connection-report
+          path: connection_report.txt
+
+      - name: Upload Isolated APK
         uses: actions/upload-artifact@v4
         with:
           name: egyplayer-isolated-release
