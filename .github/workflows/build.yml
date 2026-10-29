@@ -1,4 +1,4 @@
-name: Extract Exact API Endpoints
+name: Inspect Web Assets and x0
 
 on:
   push:
@@ -11,38 +11,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Build Tools
+      - name: Install Tools & Decompile
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget curl sed
-
+          sudo apt-get update && sudo apt-get install -y wget curl sed
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-
-      - name: Download Original APK
-        run: |
           MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
           DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
           curl -L -o original.apk "$DIRECT_URL"
-
-      - name: Decompile APK
-        run: |
           apktool d -r original.apk -o decoded_apk
 
-      - name: Dump c/b Package Strings
+      - name: Extract x0 and Web Assets
         run: |
-          echo "=== 1. جميع النصوص والمسارات داخل ملف الاتصال الرئيسي x0.smali ==="
+          echo "=== 1. قائمة الملفات داخل assets/Web ==="
+          find decoded_apk/assets -type f || true
+
+          echo -e "\n=== 2. جميع النصوص والمسارات داخل x0.smali ==="
           grep -n "const-string" decoded_apk/smali/c/b/x0.smali || true
 
-          echo -e "\n=== 2. جميع النصوص داخل ملف f1.smali ==="
-          grep -n "const-string" decoded_apk/smali/c/b/f1.smali || true
+          echo -e "\n=== 3. جميع النصوص داخل z0.smali و s0.smali ==="
+          grep -n "const-string" decoded_apk/smali/c/b/z0.smali decoded_apk/smali/c/b/s0.smali || true
 
-          echo -e "\n=== 3. أي مسارات أخرى في مجلد c/b ==="
-          grep -rn "const-string" decoded_apk/smali/c/b/ | grep -vE "x0\.smali|f1\.smali" | head -n 200 || true
+          echo -e "\n=== 4. البحث عن الروابط أو API داخل ملفات Web ==="
+          grep -rnE "http|API/|api|egyplayer|Expired|Status" decoded_apk/assets/ || true
