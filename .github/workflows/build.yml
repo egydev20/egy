@@ -1,4 +1,4 @@
-name: Build APK Safe Mode
+name: Build Final APK
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Safe bypass.js
+      - name: Inject Final Interceptor bypass.js
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,7 +38,6 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // 1. حقن بيانات التفعيل في الذاكرة المحلية للمتصفح المدمج
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -50,21 +49,50 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // 2. مزامنة صامتة مع الاستضافة في الخلفية دون أي اعتراض للطلبات الأصلية لتجنب الشاشة الزرقاء
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
+              // اعتراض طلبات الشبكة وإجبار الاستجابة على النجاح التام
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) this._url = url.toString().toLowerCase();
+                  return OG_OPEN.apply(this, arguments);
               };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 500);
 
-              // 3. إخفاء نصوص انتهاء الصلاحية والتنبيهات المزعجة فقط برمجياً عند ظهورها
+              var OG_SEND = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function (body) {
+                  var u = this._url || "";
+                  if (u.indexOf("router.php") !== -1 || u.indexOf("activation") !== -1 || u.indexOf("status") !== -1 || u.indexOf("license") !== -1) {
+                      var xhr = this;
+                      setTimeout(function() {
+                          var successResponse = JSON.stringify({
+                              status: "active",
+                              Status: "active",
+                              IsValid: true,
+                              active: true,
+                              expired: false,
+                              device: {
+                                  mac: targetMac,
+                                  key: targetKey,
+                                  status: "active",
+                                  expire_date: "2030-12-31"
+                              },
+                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
+                          });
+                          try {
+                              Object.defineProperty(xhr, "status", { value: 200, writable: true });
+                              Object.defineProperty(xhr, "readyState", { value: 4, writable: true });
+                              Object.defineProperty(xhr, "responseText", { value: successResponse, writable: true });
+                              Object.defineProperty(xhr, "response", { value: successResponse, writable: true });
+                          } catch(e) {}
+                          if (xhr.onload) xhr.onload();
+                          if (xhr.onreadystatechange) xhr.onreadystatechange();
+                      }, 10);
+                      return;
+                  }
+                  return OG_SEND.call(this, body);
+              };
+
+              // إخفاء أي عنصر يحمل نص انتهاء الصلاحية فوراً
               setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4");
+                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
                   for (var i = 0; i < elements.length; i++) {
                       var txt = (elements[i].innerText || "").trim().toLowerCase();
                       if (
@@ -79,12 +107,11 @@ jobs:
                           elements[i].style.display = "none";
                       }
                   }
-              }, 150);
+              }, 50);
 
           })(window);
           EOF
 
-          # ربط السكربت بملف index.html ليتم تحميله بسلام
           if [ -f "decoded_apk/assets/Web/index.html" ]; then
               sed -i 's/<head>/<head><script src="bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
           fi
