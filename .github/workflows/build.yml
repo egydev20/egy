@@ -1,34 +1,4 @@
-name: Build APK Connected to Hostinger PHP
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Tools & Decompile
-        run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
-          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
-          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
-          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
-          DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
-          curl -L -o original.apk "$DIRECT_URL"
-          apktool d -r original.apk -o decoded_apk
-
-      - name: Replace bypass.js with PHP Backend Connector
+      - name: Replace bypass.js with Instant Activator
         run: |
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
@@ -38,60 +8,16 @@ jobs:
               win.isLoaderOnlineCFEnabled = function () { return false; };
               win.isAppOnlineCFEnabled = function () { return false; };
 
-              // 1. BRANDING & UI STABILIZATION
-              var fixBranding = function (s) {
-                  if (!s || typeof s !== 'string') return s;
-                  return s.replace(/duplexplay\.com/gi, "egyplayer.com")
-                      .replace(/duplexiptv\.com/gi, "egyplayer.com")
-                      .replace(/Edit\.EGY PLAYER\.com/gi, "egyplayer.com")
-                      .replace(/DuplexPlay/gi, "EGY PLAYER")
-                      .replace(/Duplex Play/gi, "EGY PLAYER")
-                      .replace(/Duplex/gi, "EGY PLAYER")
-                      .replace(/edit\.egyplayer\.com/gi, "egyplayer.com");
-              };
+              // تثبيت الأيام المتبقية في الذاكرة لتكون مفعلة دائماً
+              try {
+                  localStorage.setItem("RemainDays", "365");
+                  localStorage.setItem("Status", "active");
+                  localStorage.setItem("IsValid", "true");
+              } catch(e) {}
 
-              var cleanNodeDefinitive = function (node) {
-                  if (!node) return;
-                  if (node.nodeType === 3) {
-                      var nt = fixBranding(node.nodeValue);
-                      if (nt !== node.nodeValue) node.nodeValue = nt;
-                  } else if (node.nodeType === 1) {
-                      var tag = node.tagName.toLowerCase();
-                      if (tag === 'script' || tag === 'style') return;
-                      if (node.id === "egy-integrated-status") return;
-
-                      var txt = (node.textContent || "").toLowerCase();
-                      var classes = (node.className || "");
-
-                      if (tag === 'button' || tag === 'div' || tag === 'a') {
-                          if (txt === "activation" || txt === "التفعيل" || classes.indexOf("activation") !== -1 || (node.querySelector && node.querySelector(".mdi-key"))) {
-                              if (node.parentNode) { node.parentNode.removeChild(node); return; }
-                          }
-                      }
-
-                      if (node.placeholder) node.placeholder = fixBranding(node.placeholder);
-                      if (node.title) node.title = fixBranding(node.title);
-
-                      for (var j = 0; j < node.childNodes.length; j++) cleanNodeDefinitive(node.childNodes[j]);
-                  }
-              };
-
-              var observer = new MutationObserver(function (mutations) {
-                  for (var i = 0; i < mutations.length; i++) {
-                      var m = mutations[i];
-                      for (var j = 0; j < m.addedNodes.length; j++) cleanNodeDefinitive(m.addedNodes[j]);
-                  }
-              });
-              observer.observe(document.documentElement, { childList: true, subtree: true });
-
-              // 2. MAC & KEY GENERATION
+              // MAC & KEY
               win.getMac = function () {
-                  var id = null;
-                  try {
-                      if (win.PlayerInterface1 && win.PlayerInterface1.getDeviceId) id = win.PlayerInterface1.getDeviceId();
-                      else if (win.PlayerInterface2 && win.PlayerInterface2.getDeviceId) id = win.PlayerInterface2.getDeviceId();
-                  } catch (e) { }
-                  if (!id) id = localStorage.getItem("__persistUID") || "EGY" + Math.random().toString(16).substring(2);
+                  var id = localStorage.getItem("__persistUID") || "EGY" + Math.random().toString(16).substring(2);
                   localStorage.setItem("__persistUID", id);
                   var clean = id.replace(/[^0-9A-F]/gi, "").toUpperCase();
                   if (clean.length < 12) clean = (clean + "ABCDEF123456").substring(0, 12);
@@ -104,183 +30,54 @@ jobs:
               };
 
               win.makeKey = function (mac) {
-                  var c = mac.replace(/[^0-9A-F]/gi, "").toUpperCase();
-                  var h = 0;
-                  for (var i = 0; i < c.length; i++) { h = (h * 31 + c.charCodeAt(i)) >>> 0; }
-                  return String((h % 900000) + 100000);
+                  return "915937";
               };
 
-              // 3. SYNC PLAYLISTS FROM PHP SERVER TO APP
-              var _syncLocked = false;
-              var OG_SET = localStorage.setItem;
-              var OG_GET = localStorage.getItem;
-
-              var updateAppFromServer = function (remotePlaylists) {
-                  if (_syncLocked || !Array.isArray(remotePlaylists)) return;
+              // إرسال البيانات للسيرفر في الخلفية بصمت
+              var syncServer = function() {
                   try {
-                      var localRaw = OG_GET.call(localStorage, "__Accounts") || "[]";
-                      var local = JSON.parse(localRaw);
-                      var merged = [];
-                      var changed = false;
-
-                      // إضافة القوائم القادمة من لوحة التحكم
-                      for (var i = 0; i < remotePlaylists.length; i++) {
-                          var r = remotePlaylists[i];
-                          if (r.url) {
-                              merged.push({
-                                  name: r.name || "EGY Server",
-                                  url: r.url,
-                                  type: "m3u",
-                                  playlistType: "M3U",
-                                  isActive: true
-                              });
-                              changed = true;
-                          }
-                      }
-
-                      // الاحتفاظ بالقوائم المحلية غير المكررة
-                      for (var j = 0; j < local.length; j++) {
-                          var exists = false;
-                          for (var k = 0; k < merged.length; k++) {
-                              if (merged[k].url === local[j].url) { exists = true; break; }
-                          }
-                          if (!exists) merged.push(local[j]);
-                      }
-
-                      if (changed || merged.length !== local.length) {
-                          _syncLocked = true;
-                          OG_SET.call(localStorage, "__Accounts", JSON.stringify(merged));
-                          _syncLocked = false;
-                      }
-                  } catch (e) { }
+                      var mac = win.getMac();
+                      var xhr = new XMLHttpRequest();
+                      xhr.open("POST", API_URL, true);
+                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                      xhr.send(JSON.stringify({ mac: mac, key: "915937" }));
+                  } catch(e) {}
               };
+              setInterval(syncServer, 30000);
+              setTimeout(syncServer, 1000);
 
-              // 4. CONNECT TO HOSTINGER PHP API
-              var syncWithPhpBackend = function (callback) {
-                  var mac = win.getMac();
-                  var key = win.makeKey(mac);
-                  OG_SET.call(localStorage, "__deviceMAC", mac);
-                  OG_SET.call(localStorage, "__deviceKey", key);
-
-                  var xhr = new XMLHttpRequest();
-                  xhr.open("POST", API_URL + "?t=" + Date.now(), true);
-                  xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                  xhr.timeout = 10000;
-
-                  xhr.onreadystatechange = function () {
-                      if (xhr.readyState === 4) {
-                          if (xhr.status === 200) {
-                              try {
-                                  var data = JSON.parse(xhr.responseText);
-                                  if (typeof data.RemainDays !== "undefined") {
-                                      OG_SET.call(localStorage, "RemainDays", String(data.RemainDays));
-                                  }
-                                  if (data.playlist_urls) {
-                                      updateAppFromServer(data.playlist_urls);
-                                  }
-                              } catch (e) { }
-                          }
-                          if (callback) { callback(); callback = null; }
-                      }
-                  };
-
-                  xhr.onerror = xhr.ontimeout = function () {
-                      if (callback) { callback(); callback = null; }
-                  };
-
-                  try {
-                      xhr.send(JSON.stringify({ mac: mac, key: key, deviceMAC: mac, deviceKey: key }));
-                  } catch (e) {
-                      if (callback) { callback(); callback = null; }
-                  }
-              };
-
-              win.startEgyApp = function (callback) {
-                  syncWithPhpBackend(function () {
-                      if (callback) setTimeout(callback, 50);
-                  });
-                  // مزامنة دورية كل 60 ثانية لتحديث القوائم وحالة الاشتراك فوراً
-                  setInterval(function () { syncWithPhpBackend(null); }, 60000);
-              };
-
-              localStorage.getItem = function (k) {
-                  if (k === "RemainDays") return OG_GET.call(localStorage, k) || "7";
-                  return OG_GET.apply(this, arguments);
-              };
-
-              // 5. STATUS BAR OVERLAY (MAC + REMAINING DAYS)
-              var updateStatusOverlay = function () {
-                  var remDays = OG_GET.call(localStorage, "RemainDays") || "0";
-                  var mac = OG_GET.call(localStorage, "__deviceMAC") || win.getMac();
-                  var labelText = "MAC: " + mac + " | " + (remDays + " Days Left");
-                  if (win.navigator.language && win.navigator.language.indexOf("ar") === 0) {
-                      labelText = "الماك: " + mac + " | متبقي " + remDays + " يوم";
-                  }
-                  var navContainer = document.querySelector(".v-bottom-navigation, footer, [class*='bottom-nav'], #bottom-nav");
-                  if (!navContainer) return;
-                  var integratedItem = document.getElementById("egy-integrated-status");
-                  if (!integratedItem) {
-                      integratedItem = document.createElement("div");
-                      integratedItem.id = "egy-integrated-status";
-                      integratedItem.style.cssText = "display:flex !important; align-items:center !important; justify-content:center !important; margin-left:auto !important; margin-right: 20px !important; padding:0 15px !important; color:#edc04d !important; font-weight:bold !important; font-size:15px !important; text-shadow:1px 1px 2px #000 !important; white-space:nowrap !important; height:100% !important; order: 99 !important;";
-                      navContainer.appendChild(integratedItem);
-                  }
-                  if (integratedItem.innerText !== labelText) integratedItem.innerText = labelText;
-              };
-              setInterval(updateStatusOverlay, 500);
-
-              // 6. INTERCEPT INTERNAL REQUESTS & VALIDATE SUBSCRIPTION
-              var OG_OPEN = XMLHttpRequest.prototype.open;
-              XMLHttpRequest.prototype.open = function (method, url) {
-                  this._url = url;
-                  return OG_OPEN.apply(this, arguments);
-              };
-
+              // اعتراض أي طلب شبكي للتحقق من الانتهاء وإجباره على النجاح
               var OG_SEND = XMLHttpRequest.prototype.send;
               XMLHttpRequest.prototype.send = function () {
                   var u = (this._url || "").toLowerCase();
-                  if (u.indexOf("duplex") !== -1 || u.indexOf("geo") !== -1 || u.indexOf("addrenewalsubscription") !== -1) {
+                  if (u.indexOf("duplex") !== -1 || u.indexOf("geo") !== -1 || u.indexOf("renew") !== -1 || u.indexOf("status") !== -1) {
                       var s = this;
-                      var rem = parseInt(OG_GET.call(localStorage, "RemainDays") || "7", 10);
-                      var isAct = rem > 0;
                       setTimeout(function () {
-                          var res = JSON.stringify({
-                              Status: isAct ? "active" : "expired",
-                              IsValid: isAct,
-                              RemainDays: rem
-                          });
+                          var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365 });
                           try {
                               Object.defineProperty(s, "status", { value: 200, writable: true });
                               Object.defineProperty(s, "readyState", { value: 4, writable: true });
                               Object.defineProperty(s, "responseText", { value: res, writable: true });
-                          } catch (e) { }
+                          } catch (e) {}
                           if (s.onload) s.onload();
                           if (s.onreadystatechange) s.onreadystatechange();
-                      }, 50);
+                      }, 10);
                       return;
                   }
                   return OG_SEND.apply(this, arguments);
               };
+
+              // إخفاء رسائل الانتهاء من الواجهة نهائياً
+              setInterval(function() {
+                  var expiredDialogs = document.querySelectorAll("[class*='expired'], [class*='Expired']");
+                  for(var i=0; i<expiredDialogs.length; i++) {
+                      expiredDialogs[i].style.display = "none";
+                  }
+              }, 200);
+
           })(window);
           EOF
 
-          # إزالة سكربتات Firebase القديمة من index.html لتسريع فتح التطبيق
-          sed -i '/firebase-app\.js/d' decoded_apk/assets/Web/index.html || true
-          sed -i '/firebase-firestore\.js/d' decoded_apk/assets/Web/index.html || true
-
-          # تعطيل فحص التوقيع في Smali
+          # تعطيل فحص التوقيع
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
           sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
-
-      - name: Rebuild, Align and Sign APK
-        run: |
-          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
-          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: egyplayer-hostinger-release
-          path: egyplayer-hostinger.apk
