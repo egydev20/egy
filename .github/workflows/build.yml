@@ -1,4 +1,4 @@
-name: Build APK Direct Home Force
+name: Deep Scan and Fix APK Connection
 
 on:
   push:
@@ -28,19 +28,25 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Patch loader.js and Bypass Logic
+      - name: Step-by-Step Code Scan and URL Patching
         run: |
-          # فحص وتعديل ملف loader.js لفرض حالة التفعيل وتجاوز شاشة الانتهاء برمجياً من الداخل
-          if [ -f "decoded_apk/assets/Web/loader.js" ]; then
-              sed -i 's/expired/active/g' decoded_apk/assets/Web/loader.js || true
-              sed -i 's/false/true/g' decoded_apk/assets/Web/loader.js || true
-          fi
+          echo "=== Scanning for hardcoded URLs in JS files ==="
+          grep -rnw 'decoded_apk/assets/Web' -e 'http://' || true
+          grep -rnw 'decoded_apk/assets/Web' -e 'https://' || true
 
-          # إنشاء bypass.js يفرض التفعيل ويخفي أي شاشة منتهية الصلاحية فوراً
-          mkdir -p decoded_apk/assets/Web
+          # البحث عن أي رابط قديم واستبداله برابط استضافتك الحقيقي لضمان الاتصال بالسيرفر
+          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" \) -exec sed -i 's|https://duplexiptv.com|https://egyplayer.com|g' {} +
+          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" \) -exec sed -i 's|http://duplexiptv.com|https://egyplayer.com|g' {} +
+          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" \) -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
+
+          # حقن bypass.js للتحكم الكامل في الـ API والـ LocalStorage وإجبار الواجهة على الظهور
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
               "use strict";
+              var targetMac = "34:B2:0A:EF:C1:36";
+              var targetKey = "320155209";
+              var API_URL = "https://egyplayer.com/API/router.php";
+
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -48,9 +54,53 @@ jobs:
                   localStorage.setItem("active", "true");
                   localStorage.setItem("RemainDays", "365");
                   localStorage.setItem("expire_date", "2030-12-31");
+                  localStorage.setItem("deviceMAC", targetMac);
+                  localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // مراقبة المستند وإزالة شاشة انتهاء الصلاحية فور ظهورها وإظهار الواجهة الرئيسية
+              // اعتراض طلبات الشبكة وتوجيهها مباشرة إلى استضافتك
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) {
+                      var uStr = url.toString();
+                      if (uStr.indexOf("router.php") === -1 && (uStr.indexOf("activation") !== -1 || uStr.indexOf("check") !== -1 || u.indexOf("license") !== -1)) {
+                          url = API_URL;
+                      }
+                  }
+                  return OG_OPEN.apply(this, arguments);
+              };
+
+              var OG_SEND = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function (body) {
+                  var xhr = this;
+                  setTimeout(function() {
+                      try {
+                          var successResponse = JSON.stringify({
+                              status: "active",
+                              Status: "active",
+                              IsValid: true,
+                              active: true,
+                              expired: false,
+                              device: {
+                                  mac: targetMac,
+                                  key: targetKey,
+                                  status: "active",
+                                  expire_date: "2030-12-31"
+                              },
+                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
+                          });
+                          Object.defineProperty(xhr, "status", { value: 200, writable: true });
+                          Object.defineProperty(xhr, "readyState", { value: 4, writable: true });
+                          Object.defineProperty(xhr, "responseText", { value: successResponse, writable: true });
+                          Object.defineProperty(xhr, "response", { value: successResponse, writable: true });
+                      } catch(e) {}
+                      if (xhr.onload) xhr.onload();
+                      if (xhr.onreadystatechange) xhr.onreadystatechange();
+                  }, 10);
+                  return OG_SEND.call(this, body);
+              };
+
+              // إخفاء الشاشة البرتقالية وإظهار الواجهة الرئيسية فوراً
               setInterval(function() {
                   var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
                   for (var i = 0; i < elements.length; i++) {
@@ -67,7 +117,8 @@ jobs:
                           elements[i].style.display = "none";
                       }
                   }
-              }, 20);
+              }, 50);
+
           })(window);
           EOF
 
