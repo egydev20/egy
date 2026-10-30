@@ -1,4 +1,4 @@
-name: Debug and Build APK
+name: Build APK Connected to Hostinger PHP
 
 on:
   push:
@@ -28,9 +28,11 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Debugger & Clean bypass.js
+      - name: Inject and Hook bypass.js into index.html
         run: |
           mkdir -p decoded_apk/assets/Web
+          
+          # إنشاء ملف الـ bypass مع محاكاة الاستجابة الناجحة
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
               "use strict";
@@ -38,12 +40,6 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // تسجيل أخطاء الجافا سكربت لمعرفتها
-              window.addEventListener('error', function(e) {
-                  console.error("JS Error: " + e.message + " at " + e.filename + ":" + e.lineno);
-              });
-
-              // ضبط الذاكرة المحلية
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -55,20 +51,71 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // السماح للإنترنت بالعمل بحرية ومزامنة اللوحة بصمت دون أي تقاطع
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
+              // اعتراض طلبات الاتصال وإرجاع رد نجاح فوري للمتصفح المدمج
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) this._url = url.toString().toLowerCase();
+                  return OG_OPEN.apply(this, arguments);
               };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 300);
+
+              var OG_SEND = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function (body) {
+                  var u = this._url || "";
+                  if (u.indexOf("router.php") !== -1 || u.indexOf("activation") !== -1 || u.indexOf("status") !== -1 || u.indexOf("license") !== -1) {
+                      var xhr = this;
+                      setTimeout(function() {
+                          var successResponse = JSON.stringify({
+                              status: "active",
+                              Status: "active",
+                              IsValid: true,
+                              active: true,
+                              expired: false,
+                              RemainDays: 365,
+                              expire_date: "2030-12-31",
+                              mac: targetMac,
+                              key: targetKey,
+                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
+                          });
+                          try {
+                              Object.defineProperty(xhr, "status", { value: 200, writable: true });
+                              Object.defineProperty(xhr, "readyState", { value: 4, writable: true });
+                              Object.defineProperty(xhr, "responseText", { value: successResponse, writable: true });
+                              Object.defineProperty(xhr, "response", { value: successResponse, writable: true });
+                          } catch(e) {}
+                          if (xhr.onload) xhr.onload();
+                          if (xhr.onreadystatechange) xhr.onreadystatechange();
+                      }, 20);
+                      return;
+                  }
+                  return OG_SEND.call(this, body);
+              };
+
+              // إخفاء تنبيه انتهاء الصلاحية فور ظهورها
+              setInterval(function() {
+                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                  for (var i = 0; i < elements.length; i++) {
+                      var txt = (elements[i].innerText || "").trim().toLowerCase();
+                      if (
+                          txt.indexOf("activation for egy player has expired") !== -1 ||
+                          txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("status: expired") !== -1 ||
+                          txt.indexOf("six months activation") !== -1 ||
+                          txt.indexOf("one year activation") !== -1 ||
+                          txt.indexOf("renew activation") !== -1 ||
+                          txt.indexOf("i have activation") !== -1
+                      ) {
+                          elements[i].style.display = "none";
+                      }
+                  }
+              }, 50);
 
           })(window);
           EOF
+
+          # حقن استدعاء bypass.js تلقائياً في ملف index.html ليتم تحميله مع أول تشغيل
+          if [ -f "decoded_apk/assets/Web/index.html" ]; then
+              sed -i 's/<head>/<head><script src="bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
+          fi
 
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
           sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
