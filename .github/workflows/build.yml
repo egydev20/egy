@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Final bypass.js (Native Local Storage Sync)
+      - name: Inject Advanced Network Interceptor bypass.js
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,36 +38,61 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // حقن جميع متغيرات وحالات التفعيل المطلوبة ليتعرف عليها ملف duplexiptv الأساسي
+              // حقن متغيرات الذاكرة المحلية بكل الاحتمالات
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
                   localStorage.setItem("active", "true");
-                  localStorage.setItem("is_active", "true");
                   localStorage.setItem("RemainDays", "365");
                   localStorage.setItem("expire_date", "2030-12-31");
                   localStorage.setItem("deviceMAC", targetMac);
                   localStorage.setItem("deviceKey", targetKey);
-                  localStorage.setItem("mac", targetMac);
-                  localStorage.setItem("key", targetKey);
               } catch(e) {}
 
-              // الحفاظ على اتصال الخلفية مع لوحة التحكم دون قطع الإنترنت أو حجب الـ XHR
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
+              // اعتراض طلبات الـ XMLHttpRequest لتزويد التطبيق بالرد المفعل فوراً عند أي فحص
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) this._url = url.toString().toLowerCase();
+                  return OG_OPEN.apply(this, arguments);
               };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 300);
 
-              // إخفاء تنبيهات انتهاء الصلاحية والتجديد الصريحة فقط دون المساس بعناصر الشاشة الرئيسية
+              var OG_SEND = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function (body) {
+                  var u = this._url || "";
+                  // إذا طلب التطبيق أي ملف خاص بالتحقق أو الـ API الخاص بك
+                  if (u.indexOf("router.php") !== -1 || u.indexOf("activation") !== -1 || u.indexOf("license") !== -1 || u.indexOf("check") !== -1) {
+                      var req = this;
+                      setTimeout(function() {
+                          var fakeResponse = JSON.stringify({
+                              status: "active",
+                              Status: "active",
+                              IsValid: true,
+                              active: true,
+                              expired: false,
+                              RemainDays: 365,
+                              expire_date: "2030-12-31",
+                              mac: targetMac,
+                              key: targetKey,
+                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
+                          });
+                          try {
+                              Object.defineProperty(req, "status", { value: 200, writable: true });
+                              Object.defineProperty(req, "readyState", { value: 4, writable: true });
+                              Object.defineProperty(req, "responseText", { value: fakeResponse, writable: true });
+                              Object.defineProperty(req, "response", { value: fakeResponse, writable: true });
+                          } catch(e) {}
+                          if (req.onload) req.onload();
+                          if (req.onreadystatechange) req.onreadystatechange();
+                      }, 50);
+                      return;
+                  }
+                  return OG_SEND.call(this, body);
+              };
+
+              // إخفاء شاشة انتهاء الصلاحية والتنبيهات المزعجة برمجياً
               setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4");
+                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
                   for (var i = 0; i < elements.length; i++) {
                       var txt = (elements[i].innerText || "").trim().toLowerCase();
                       if (
@@ -82,7 +107,7 @@ jobs:
                           elements[i].style.display = "none";
                       }
                   }
-              }, 200);
+              }, 100);
 
           })(window);
           EOF
