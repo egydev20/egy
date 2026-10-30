@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject bypass.js (UI Force Sync)
+      - name: Inject bypass.js (Auto Redirect to Home)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,18 +38,15 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // فرض حالة التفعيل في ذاكرة المتصفح المدمج لتجاوز شاشة التحقق المحلية
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
                   localStorage.setItem("active", "true");
                   localStorage.setItem("RemainDays", "365");
-                  localStorage.setItem("deviceMAC", targetMac);
-                  localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // مزامنة مستمرة مع سيرفرك وتحديث الواجهة
+              // مزامنة الاتصال بالسيرفر وإجبار الواجهة على تخطي الشاشة الحالية
               var syncServer = function() {
                   var xhr = new XMLHttpRequest();
                   xhr.open("POST", API_URL, true);
@@ -57,16 +54,12 @@ jobs:
                   xhr.onreadystatechange = function() {
                       if (xhr.readyState === 4 && xhr.status === 200) {
                           try {
-                              var res = JSON.parse(xhr.responseText);
-                              if (res.status === "active" || res.Status === true) {
-                                  // محاولة إعادة تحميل أو توجيه الواجهة إذا كانت عالقة
-                                  var expireElements = document.querySelectorAll("div, span, p");
-                                  for(var i=0; i<expireElements.length; i++) {
-                                      var txt = (expireElements[i].innerText || "").toLowerCase();
-                                      if(txt.indexOf("has expired") !== -1) {
-                                          // إخفاء تنبيه انتهاء الصلاحية فوراً عند التأكد من اتصال السيرفر
-                                          expireElements[i].style.display = "none";
-                                      }
+                              // البحث عن أي عناصر تحكم أو أزرار تحديث/تخطي والضغط عليها برمجياً لفتح القنوات
+                              var buttons = document.querySelectorAll("button, a, div");
+                              for (var i = 0; i < buttons.length; i++) {
+                                  var txt = (buttons[i].innerText || "").trim().toLowerCase();
+                                  if (txt === "refresh" || txt === "ok" || txt === "continue" || txt === "dismis") {
+                                      buttons[i].click();
                                   }
                               }
                           } catch(e) {}
@@ -76,9 +69,9 @@ jobs:
               };
 
               setInterval(syncServer, 5000);
-              setTimeout(syncServer, 200);
+              setTimeout(syncServer, 300);
 
-              // إخفاء تنبيه انتهاء الصلاحية وزر التجديد المزعج دائمًا
+              // إخفاء تنبيه انتهاء الصلاحية وتوجيه المتصفح المدمج إن أمكن
               setInterval(function() {
                   var elements = document.querySelectorAll("div, button, span, p");
                   for (var i = 0; i < elements.length; i++) {
@@ -87,9 +80,9 @@ jobs:
                           txt.indexOf("activation for egy player has expired") !== -1 ||
                           txt.indexOf("please renew your activation") !== -1 ||
                           txt.indexOf("renew activation") !== -1 ||
-                          txt.indexOf("i have activation") !== -1 ||
-                          txt.indexOf("after renewing the activation") !== -1
+                          txt.indexOf("i have activation") !== -1
                       ) {
+                          // بدلاً من إخفاء الحاوية بالكامل، نقوم بإخفاء النص المزعج فقط
                           elements[i].style.display = "none";
                       }
                   }
