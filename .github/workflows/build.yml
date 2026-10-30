@@ -1,4 +1,4 @@
-name: Build APK Fix ScaleFont Error
+name: Build Original APK with Domain Redirect
 
 on:
   push:
@@ -17,87 +17,27 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Tools & Decompile
+      - name: Install Tools & Download Original APK
         run: |
           sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
-          DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
-          curl -L -o original.apk "$DIRECT_URL"
+          
+          # تحميل النسخة الأصلية الخام التي قمت برفعها
+          curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
+          
+          # فك التطبيق مع الاحتفاظ بالموارد الخام دون فك تشفير الـ XML الثنائي
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject ScaleFont Fix & bypass.js
+      - name: Replace Domain and Sync with Hostinger
         run: |
-          mkdir -p decoded_apk/assets/Web
-          cat << 'EOF' > decoded_apk/assets/Web/bypass.js
-          (function (win) {
-              "use strict";
-              var targetMac = "34:B2:0A:EF:C1:36";
-              var targetKey = "320155209";
+          echo "=== Replacing duplexplay.com with egyplayer.com in Web Assets ==="
+          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
+          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|www.duplexplay.com|egyplayer.com|g' {} +
 
-              // 1. منع انهيار الـ JS بسبب أي خاصية null (مثل scaleFont) عبر Proxy آمن
-              try {
-                  if (typeof win.scaleFont === 'undefined') {
-                      win.scaleFont = function() { return 1; };
-                  }
-              } catch(e) {}
-
-              // حماية عامة للـ DOM لمنع أخطاء قراءة الخاصية من null
-              var origQuery = document.querySelector;
-              if (origQuery) {
-                  document.querySelector = function(selector) {
-                      var el = origQuery.call(document, selector);
-                      if (!el) {
-                          // إرجاع عنصر وهمي لمنع الانهيار
-                          var dummy = document.createElement('div');
-                          dummy.style.display = 'none';
-                          dummy.scaleFont = function() {};
-                          return dummy;
-                      }
-                      return el;
-                  };
-              }
-
-              // 2. حقن بيانات التفعيل محلياً
-              try {
-                  localStorage.setItem("status", "active");
-                  localStorage.setItem("Status", "active");
-                  localStorage.setItem("IsValid", "true");
-                  localStorage.setItem("active", "true");
-                  localStorage.setItem("RemainDays", "365");
-                  localStorage.setItem("expire_date", "2030-12-31");
-                  localStorage.setItem("deviceMAC", targetMac);
-                  localStorage.setItem("deviceKey", targetKey);
-              } catch(e) {}
-
-              // 3. إخفاء شاشة انتهاء الصلاحية إن ظهرت
-              setInterval(function() {
-                  try {
-                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                      for (var i = 0; i < elements.length; i++) {
-                          var txt = (elements[i].innerText || "").trim().toLowerCase();
-                          if (
-                              txt.indexOf("activation for egy player has expired") !== -1 ||
-                              txt.indexOf("please renew your activation") !== -1 ||
-                              txt.indexOf("status: expired") !== -1
-                          ) {
-                              elements[i].style.display = "none";
-                          }
-                      }
-                  } catch(e) {}
-              }, 100);
-
-          })(window);
-          EOF
-
-          if [ -f "decoded_apk/assets/Web/index.html" ]; then
-              sed -i 's/<head>/<head><script src="bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
-          fi
-
+          # التأكد من عدم وجود أي قيود توقيع تعيق التشغيل
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
-          sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
 
       - name: Rebuild, Align and Sign APK
         run: |
