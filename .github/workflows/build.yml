@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Clean bypass.js (Restore Home UI)
+      - name: Inject bypass.js (Force Active API Response & UI Fix)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,7 +38,7 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // ضبط حالة التفعيل محلياً لضمان فتح الواجهة الرئيسية مباشرة
+              // تثبيت حالة التفعيل في ذاكرة المتصفح محلياً
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -49,35 +49,63 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // مزامنة صامتة مع السيرفر في الخلفية
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
+              // اعتراض طلبات الشبكة لإجبار السيرفر الوهمي الداخلي على إرجاع حالة Active دائماً للتطبيق
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) this._url = url.toString().toLowerCase();
+                  return OG_OPEN.apply(this, arguments);
               };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 200);
 
-              // إخفاء النصوص المحددة فقط داخل العناصر النصية الصغيرة دون المساس بالهيكل أو الواجهة
+              var OG_SEND = XMLHttpRequest.prototype.send;
+              XMLHttpRequest.prototype.send = function (body) {
+                  var u = this._url || "";
+                  // إذا كان الطلب يخص حالة الجهاز أو التفعيل، نقوم بالرد الفوري بنجاح التفعيل
+                  if (u.indexOf("router.php") !== -1 || u.indexOf("activation") !== -1 || u.indexOf("status") !== -1 || u.indexOf("device") !== -1) {
+                      var s = this;
+                      setTimeout(function () {
+                          var res = JSON.stringify({
+                              status: "active",
+                              Status: "active",
+                              IsValid: true,
+                              active: true,
+                              expired: false,
+                              RemainDays: 365,
+                              expire_date: "2030-12-31",
+                              mac: targetMac,
+                              key: targetKey,
+                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
+                          });
+                          try {
+                              Object.defineProperty(s, "status", { value: 200, writable: true });
+                              Object.defineProperty(s, "readyState", { value: 4, writable: true });
+                              Object.defineProperty(s, "responseText", { value: res, writable: true });
+                          } catch (e) {}
+                          if (s.onload) s.onload();
+                          if (s.onreadystatechange) s.onreadystatechange();
+                      }, 10);
+                      return;
+                  }
+                  return OG_SEND.call(this, body);
+              };
+
+              // إخفاء نصوص انتهاء الصلاحية وأزرار التجديد فقط دون إخفاء الواجهة الرئيسية
               setInterval(function() {
-                  var allTags = document.querySelectorAll("span, p, h1, h2, h3, h4");
-                  for (var i = 0; i < allTags.length; i++) {
-                      var txt = (allTags[i].innerText || "").trim().toLowerCase();
+                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                  for (var i = 0; i < elements.length; i++) {
+                      var txt = (elements[i].innerText || "").trim().toLowerCase();
                       if (
                           txt.indexOf("activation for egy player has expired") !== -1 ||
                           txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("status: expired") !== -1 ||
                           txt.indexOf("six months activation") !== -1 ||
                           txt.indexOf("one year activation") !== -1 ||
                           txt.indexOf("renew activation") !== -1 ||
                           txt.indexOf("i have activation") !== -1
                       ) {
-                          allTags[i].style.display = "none";
+                          elements[i].style.display = "none";
                       }
                   }
-              }, 300);
+              }, 150);
 
           })(window);
           EOF
