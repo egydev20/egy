@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject bypass.js (Fix Connection & Hide Specific UI)
+      - name: Inject bypass.js (UI Force Sync)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,65 +38,62 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // 1. إصلاح الاتصال: السماح للإنترنت بالعمل وتعديل الماك المرسل فقط للوحة
-              var OG_OPEN = XMLHttpRequest.prototype.open;
-              XMLHttpRequest.prototype.open = function(method, url) {
-                  this._url = url;
-                  return OG_OPEN.apply(this, arguments);
-              };
+              // فرض حالة التفعيل في ذاكرة المتصفح المدمج لتجاوز شاشة التحقق المحلية
+              try {
+                  localStorage.setItem("status", "active");
+                  localStorage.setItem("Status", "active");
+                  localStorage.setItem("IsValid", "true");
+                  localStorage.setItem("active", "true");
+                  localStorage.setItem("RemainDays", "365");
+                  localStorage.setItem("deviceMAC", targetMac);
+                  localStorage.setItem("deviceKey", targetKey);
+              } catch(e) {}
 
-              var OG_SEND = XMLHttpRequest.prototype.send;
-              XMLHttpRequest.prototype.send = function (body) {
-                  // إذا كان الطلب يحتوي على بيانات JSON، نعدل الماك ليتطابق مع لوحة التحكم
-                  if (body && typeof body === "string" && body.indexOf("{") !== -1) {
-                      try {
-                          var data = JSON.parse(body);
-                          if (data.mac || data.deviceMAC || data.deviceID) {
-                              data.mac = targetMac;
-                              data.deviceMAC = targetMac;
-                              data.deviceID = targetMac;
-                              data.key = targetKey;
-                              data.deviceKey = targetKey;
-                              body = JSON.stringify(data);
-                          }
-                      } catch(e) {}
-                  }
-                  // إرسال الطلب بشكل طبيعي جداً دون إيقافه
-                  return OG_SEND.call(this, body);
-              };
-
-              // 2. المزامنة المستمرة مع السيرفر الخاص بك
+              // مزامنة مستمرة مع سيرفرك وتحديث الواجهة
               var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
+                  var xhr = new XMLHttpRequest();
+                  xhr.open("POST", API_URL, true);
+                  xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                  xhr.onreadystatechange = function() {
+                      if (xhr.readyState === 4 && xhr.status === 200) {
+                          try {
+                              var res = JSON.parse(xhr.responseText);
+                              if (res.status === "active" || res.Status === true) {
+                                  // محاولة إعادة تحميل أو توجيه الواجهة إذا كانت عالقة
+                                  var expireElements = document.querySelectorAll("div, span, p");
+                                  for(var i=0; i<expireElements.length; i++) {
+                                      var txt = (expireElements[i].innerText || "").toLowerCase();
+                                      if(txt.indexOf("has expired") !== -1) {
+                                          // إخفاء تنبيه انتهاء الصلاحية فوراً عند التأكد من اتصال السيرفر
+                                          expireElements[i].style.display = "none";
+                                      }
+                                  }
+                              }
+                          } catch(e) {}
+                      }
+                  };
+                  xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
               };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 500);
 
-              // 3. إخفاء دقيق للعناصر المحددة بالبرتقالي فقط
+              setInterval(syncServer, 5000);
+              setTimeout(syncServer, 200);
+
+              // إخفاء تنبيه انتهاء الصلاحية وزر التجديد المزعج دائمًا
               setInterval(function() {
-                  var elements = document.querySelectorAll("div, button, span");
+                  var elements = document.querySelectorAll("div, button, span, p");
                   for (var i = 0; i < elements.length; i++) {
                       var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      
-                      // إخفاء أزرار التفعيل والتجديد فقط
-                      if (txt === "renew activation" || txt === "i have activation") {
+                      if (
+                          txt.indexOf("activation for egy player has expired") !== -1 ||
+                          txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("renew activation") !== -1 ||
+                          txt.indexOf("i have activation") !== -1 ||
+                          txt.indexOf("after renewing the activation") !== -1
+                      ) {
                           elements[i].style.display = "none";
                       }
-                      
-                      // إخفاء صندوق الأسعار فقط
-                      if (txt.indexOf("six months activation cost") !== -1 || txt.indexOf("one year activation cost") !== -1) {
-                          // التأكد من إخفاء الصندوق الداخلي فقط وليس خلفية الشاشة بأكملها
-                          if (elements[i].offsetHeight < 250) {
-                              elements[i].style.display = "none";
-                          }
-                      }
                   }
-              }, 200);
+              }, 100);
 
           })(window);
           EOF
