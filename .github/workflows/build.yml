@@ -1,69 +1,44 @@
-name: Build APK Connected to Hostinger PHP
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Tools & Decompile
-        run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
-          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
-          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
-          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
-          DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
-          curl -L -o original.apk "$DIRECT_URL"
-          apktool d -r original.apk -o decoded_apk
-
-      - name: Create bypass.js
+      - name: Create bypass.js to Strip Activation UI
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
               "use strict";
               var API_URL = "https://egyplayer.com/API/router.php";
+
               win.isLoaderOnlineCFEnabled = function () { return false; };
               win.isAppOnlineCFEnabled = function () { return false; };
-              win.getMac = function () { return "34:B2:0A:EF:C1:36"; };
-              win.makeKey = function (mac) { return "320155209"; };
+
               try {
-                  localStorage.setItem("__persistUID", "34:B2:0A:EF:C1:36");
-                  localStorage.setItem("__deviceMAC", "34:B2:0A:EF:C1:36");
-                  localStorage.setItem("__deviceKey", "320155209");
                   localStorage.setItem("RemainDays", "365");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
               } catch(e) {}
+
+              // إرسال الماك الحقيقي للجهاز للسيرفر فوراً
               var syncServer = function() {
                   try {
+                      var mac = "";
+                      if (win.PlayerInterface1 && win.PlayerInterface1.getDeviceId) mac = win.PlayerInterface1.getDeviceId();
+                      else mac = localStorage.getItem("__persistUID") || "C2:ED:89:66:E1:AE";
+                      
                       var xhr = new XMLHttpRequest();
                       xhr.open("POST", API_URL, true);
                       xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: "34:B2:0A:EF:C1:36", key: "320155209" }));
+                      xhr.send(JSON.stringify({ mac: mac, key: "253247" }));
                   } catch(e) {}
               };
-              setInterval(syncServer, 20000);
+              setInterval(syncServer, 15000);
               setTimeout(syncServer, 500);
+
+              // إجبار أي طلب شبكي على العودة بنجاح وتفعيل كامل
               var OG_SEND = XMLHttpRequest.prototype.send;
               XMLHttpRequest.prototype.send = function () {
                   var u = (this._url || "").toLowerCase();
-                  if (u.indexOf("duplex") !== -1 || u.indexOf("geo") !== -1 || u.indexOf("renew") !== -1 || u.indexOf("status") !== -1 || u.indexOf("addrenewal") !== -1) {
+                  if (u.indexOf("duplex") !== -1 || u.indexOf("geo") !== -1 || u.indexOf("renew") !== -1 || u.indexOf("status") !== -1 || u.indexOf("addrenewal") !== -1 || u.indexOf("activation") !== -1) {
                       var s = this;
                       setTimeout(function () {
-                          var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365, mac: "34:B2:0A:EF:C1:36", key: "320155209" });
+                          var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365 });
                           try {
                               Object.defineProperty(s, "status", { value: 200, writable: true });
                               Object.defineProperty(s, "readyState", { value: 4, writable: true });
@@ -76,26 +51,31 @@ jobs:
                   }
                   return OG_SEND.apply(this, arguments);
               };
-              setInterval(function() {
-                  var dialogs = document.querySelectorAll("[class*='expired'], [class*='Expired'], [class*='activation'], [class*='Activation']");
-                  for(var i=0; i<dialogs.length; i++) {
-                      dialogs[i].style.display = "none";
+
+              // إزالة واختفاء أي نافذة تخص التفعيل أو الانتهاء بشكل مستمر وقوي
+              var removeActivationPopups = function() {
+                  var selectors = [
+                      "[class*='expired']", "[class*='Expired']",
+                      "[class*='activation']", "[class*='Activation']",
+                      ".v-dialog", ".v-dialog--active"
+                  ];
+                  // البحث عن الألغام وحذفها إذا كانت تحتوي على كلمة منتهي أو تفعيل
+                  var allDivs = document.getElementsByTagName("div");
+                  for(var i=0; i<allDivs.length; i++) {
+                      var txt = (allDivs[i].innerText || "").toLowerCase();
+                      if(txt.indexOf("expired") !== -1 || txt.indexOf("activation") !== -1 || txt.indexOf("منتهي") !== -1 || txt.indexOf("تفعيل") !== -1) {
+                          // التأكد من أنها ليست الشاشة الرئيسية
+                          if(allDivs[i].offsetHeight < 500) {
+                              allDivs[i].style.display = "none";
+                              allDivs[i].innerHTML = "";
+                          }
+                      }
                   }
-              }, 100);
+              };
+              setInterval(removeActivationPopups, 100);
+
           })(window);
           EOF
+
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
-          sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
-
-      - name: Rebuild, Align and Sign APK
-        run: |
-          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
-          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: egyplayer-hostinger-release
-          path: egyplayer-hostinger.apk
+          sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
