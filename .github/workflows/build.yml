@@ -1,4 +1,4 @@
-name: Deep Diagnostic Scan and Build
+name: Build APK Fix ScaleFont Error
 
 on:
   push:
@@ -28,26 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Comprehensive Diagnostic Scan
-        run: |
-          echo "=========================================="
-          echo "1. Scanning all JS files inside assets/Web"
-          echo "=========================================="
-          find decoded_apk/assets/Web -name "*.js"
-          
-          echo "=========================================="
-          echo "2. Searching for license/activation endpoints"
-          echo "=========================================="
-          grep -rnw 'decoded_apk/assets/Web' -e 'http' || true
-          grep -rnw 'decoded_apk/assets/Web' -e 'api' || true
-          grep -rnw 'decoded_apk/assets/Web' -e 'status' || true
-
-          echo "=========================================="
-          echo "3. Checking index.html structure"
-          echo "=========================================="
-          head -n 30 decoded_apk/assets/Web/index.html || true
-
-      - name: Inject Diagnostic bypass.js & Error Logger
+      - name: Inject ScaleFont Fix & bypass.js
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -56,22 +37,30 @@ jobs:
               var targetMac = "34:B2:0A:EF:C1:36";
               var targetKey = "320155209";
 
-              // التقاط أي خطأ جافا سكربت وإظهاره على الشاشة لكي نعرف سبب الشاشة الزرقاء
-              window.addEventListener('error', function(event) {
-                  var errDiv = document.createElement('div');
-                  errDiv.style.position = 'fixed';
-                  errDiv.style.top = '0';
-                  errDiv.style.left = '0';
-                  errDiv.style.width = '100%';
-                  errDiv.style.background = 'red';
-                  errDiv.style.color = 'white';
-                  errDiv.style.zIndex = '999999';
-                  errDiv.style.padding = '10px';
-                  errDiv.style.fontSize = '14px';
-                  errDiv.innerText = 'JS Error: ' + event.message + ' at ' + event.filename + ':' + event.lineno;
-                  document.body.appendChild(errDiv);
-              });
+              // 1. منع انهيار الـ JS بسبب أي خاصية null (مثل scaleFont) عبر Proxy آمن
+              try {
+                  if (typeof win.scaleFont === 'undefined') {
+                      win.scaleFont = function() { return 1; };
+                  }
+              } catch(e) {}
 
+              // حماية عامة للـ DOM لمنع أخطاء قراءة الخاصية من null
+              var origQuery = document.querySelector;
+              if (origQuery) {
+                  document.querySelector = function(selector) {
+                      var el = origQuery.call(document, selector);
+                      if (!el) {
+                          // إرجاع عنصر وهمي لمنع الانهيار
+                          var dummy = document.createElement('div');
+                          dummy.style.display = 'none';
+                          dummy.scaleFont = function() {};
+                          return dummy;
+                      }
+                      return el;
+                  };
+              }
+
+              // 2. حقن بيانات التفعيل محلياً
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -83,7 +72,7 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // إخفاء تنبيهات انتهاء الصلاحية
+              // 3. إخفاء شاشة انتهاء الصلاحية إن ظهرت
               setInterval(function() {
                   try {
                       var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
