@@ -1,4 +1,4 @@
-name: Build APK Connected to Hostinger PHP
+name: Debug and Build APK
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Advanced Network Interceptor bypass.js
+      - name: Inject Debugger & Clean bypass.js
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,7 +38,12 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
-              // حقن متغيرات الذاكرة المحلية بكل الاحتمالات
+              // تسجيل أخطاء الجافا سكربت لمعرفتها
+              window.addEventListener('error', function(e) {
+                  console.error("JS Error: " + e.message + " at " + e.filename + ":" + e.lineno);
+              });
+
+              // ضبط الذاكرة المحلية
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -50,68 +55,21 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // اعتراض طلبات الـ XMLHttpRequest لتزويد التطبيق بالرد المفعل فوراً عند أي فحص
-              var OG_OPEN = XMLHttpRequest.prototype.open;
-              XMLHttpRequest.prototype.open = function(method, url) {
-                  if (url) this._url = url.toString().toLowerCase();
-                  return OG_OPEN.apply(this, arguments);
+              // السماح للإنترنت بالعمل بحرية ومزامنة اللوحة بصمت دون أي تقاطع
+              var syncServer = function() {
+                  try {
+                      var xhr = new XMLHttpRequest();
+                      xhr.open("POST", API_URL, true);
+                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
+                  } catch(e) {}
               };
-
-              var OG_SEND = XMLHttpRequest.prototype.send;
-              XMLHttpRequest.prototype.send = function (body) {
-                  var u = this._url || "";
-                  // إذا طلب التطبيق أي ملف خاص بالتحقق أو الـ API الخاص بك
-                  if (u.indexOf("router.php") !== -1 || u.indexOf("activation") !== -1 || u.indexOf("license") !== -1 || u.indexOf("check") !== -1) {
-                      var req = this;
-                      setTimeout(function() {
-                          var fakeResponse = JSON.stringify({
-                              status: "active",
-                              Status: "active",
-                              IsValid: true,
-                              active: true,
-                              expired: false,
-                              RemainDays: 365,
-                              expire_date: "2030-12-31",
-                              mac: targetMac,
-                              key: targetKey,
-                              playlists: [{name: "egy", url: "http://mgtv.mom:80/get.php?username=ahmedelnady&password=..."}]
-                          });
-                          try {
-                              Object.defineProperty(req, "status", { value: 200, writable: true });
-                              Object.defineProperty(req, "readyState", { value: 4, writable: true });
-                              Object.defineProperty(req, "responseText", { value: fakeResponse, writable: true });
-                              Object.defineProperty(req, "response", { value: fakeResponse, writable: true });
-                          } catch(e) {}
-                          if (req.onload) req.onload();
-                          if (req.onreadystatechange) req.onreadystatechange();
-                      }, 50);
-                      return;
-                  }
-                  return OG_SEND.call(this, body);
-              };
-
-              // إخفاء شاشة انتهاء الصلاحية والتنبيهات المزعجة برمجياً
-              setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                  for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      if (
-                          txt.indexOf("activation for egy player has expired") !== -1 ||
-                          txt.indexOf("please renew your activation") !== -1 ||
-                          txt.indexOf("status: expired") !== -1 ||
-                          txt.indexOf("six months activation") !== -1 ||
-                          txt.indexOf("one year activation") !== -1 ||
-                          txt.indexOf("renew activation") !== -1 ||
-                          txt.indexOf("i have activation") !== -1
-                      ) {
-                          elements[i].style.display = "none";
-                      }
-                  }
-              }, 100);
+              setInterval(syncServer, 10000);
+              setTimeout(syncServer, 300);
 
           })(window);
           EOF
-          
+
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
           sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
 
