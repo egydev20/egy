@@ -1,4 +1,4 @@
-name: Build APK Fix Loading Freeze
+name: Build Stable APK Clean Mode
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Loading Bypass & Force UI Render
+      - name: Clean and Safe bypass.js Injection
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -36,9 +36,8 @@ jobs:
               "use strict";
               var targetMac = "34:B2:0A:EF:C1:36";
               var targetKey = "320155209";
-              var API_URL = "https://egyplayer.com/API/router.php";
 
-              // 1. حقن بيانات التفعيل في الذاكرة المحلية
+              // 1. حقن بيانات التفعيل مباشرة لقرائتها محلياً دون أخطاء
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -50,52 +49,27 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // 2. السماح للاتصال الحقيقي بالذهاب للاستضافة دون اعتراض لتعمل اللوحة بشكل سليم
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
-              };
-              setTimeout(syncServer, 200);
-
-              // 3. تجاوز شاشة التحميل المعلقة (Loading Freeze) وإجبار ظهور الواجهة الرئيسية بعد ثانيتين
-              setTimeout(function() {
-                  var loaders = document.querySelectorAll("div, span, section, body");
-                  for (var i = 0; i < loaders.length; i++) {
-                      var text = (loaders[i].innerText || "").toLowerCase();
-                      if (text.indexOf("is loading") !== -1 || text.indexOf("loading") !== -1) {
-                          loaders[i].style.display = "none";
-                      }
-                  }
-                  
-                  // محاكاة استدعاء دوال العرض الرئيسية إن وجدت
-                  try {
-                      if (typeof win.loadHome === "function") win.loadHome();
-                      if (typeof win.init === "function") win.init();
-                  } catch(e) {}
-              }, 2000);
-
-              // 4. إخفاء أي تنبيه انتهاء صلاحية قد يظهر لاحقاً
+              // 2. إخفاء رسائل انتهاء الصلاحية إن وجدت دون التأثير على عمل الواجهة
               setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                  for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      if (
-                          txt.indexOf("activation for egy player has expired") !== -1 ||
-                          txt.indexOf("please renew your activation") !== -1 ||
-                          txt.indexOf("status: expired") !== -1
-                      ) {
-                          elements[i].style.display = "none";
+                  try {
+                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                      for (var i = 0; i < elements.length; i++) {
+                          var txt = (elements[i].innerText || "").trim().toLowerCase();
+                          if (
+                              txt.indexOf("activation for egy player has expired") !== -1 ||
+                              txt.indexOf("please renew your activation") !== -1 ||
+                              txt.indexOf("status: expired") !== -1
+                          ) {
+                              elements[i].style.display = "none";
+                          }
                       }
-                  }
+                  } catch(e) {}
               }, 100);
 
           })(window);
           EOF
 
+          # ربط السكربت بسلام في ملف index.html
           if [ -f "decoded_apk/assets/Web/index.html" ]; then
               sed -i 's/<head>/<head><script src="bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
           fi
