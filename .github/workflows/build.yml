@@ -28,70 +28,90 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Create bypass.js to Hide Specific Orange Elements
+      - name: Inject bypass.js (Fix Internet & Hide UI)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
               "use strict";
-              var API_URL = "https://egyplayer.com/API/router.php";
-
-              win.isLoaderOnlineCFEnabled = function () { return false; };
-              win.isAppOnlineCFEnabled = function () { return false; };
+              var targetMac = "34:B2:0A:EF:C1:36";
+              var targetKey = "320155209";
 
               try {
                   localStorage.setItem("RemainDays", "365");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
+                  localStorage.setItem("__persistUID", targetMac);
+                  localStorage.setItem("__deviceMAC", targetMac);
+                  localStorage.setItem("__deviceKey", targetKey);
               } catch(e) {}
 
-              // الحفاظ على اتصال التطبيق الدائم باللوحة
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: "34:B2:0A:EF:C1:36", key: "320155209" }));
-                  } catch(e) {}
-              };
-              setInterval(syncServer, 15000);
-              setTimeout(syncServer, 300);
+              if (win.PlayerInterface1) {
+                  win.PlayerInterface1.getDeviceId = function() { return targetMac; };
+              }
 
-              // اعتراض طلبات الشبكة لتأكيد حالة التفعيل دائماً
+              // تتبع الروابط بشكل صحيح دون كسر الاتصال
+              var OG_OPEN = XMLHttpRequest.prototype.open;
+              XMLHttpRequest.prototype.open = function(method, url) {
+                  if (url) this._url = url.toString().toLowerCase();
+                  return OG_OPEN.apply(this, arguments);
+              };
+
+              // اعتراض طلبات الشبكة لتعديل الماك المُرسل للسيرفر فقط، والسماح للإنترنت بالعمل
               var OG_SEND = XMLHttpRequest.prototype.send;
-              XMLHttpRequest.prototype.send = function () {
-                  var s = this;
-                  setTimeout(function () {
-                      var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365, mac: "34:B2:0A:EF:C1:36", key: "320155209" });
+              XMLHttpRequest.prototype.send = function (body) {
+                  var u = this._url || "";
+                  
+                  // تعديل الماك في جسم الطلب إذا كان التطبيق يحاول إرسال بيانات
+                  if (body && typeof body === "string" && body.indexOf("{") !== -1) {
                       try {
-                          Object.defineProperty(s, "status", { value: 200, writable: true });
-                          Object.defineProperty(s, "readyState", { value: 4, writable: true });
-                          Object.defineProperty(s, "responseText", { value: res, writable: true });
-                      } catch (e) {}
-                      if (s.onload) s.onload();
-                      if (s.onreadystatechange) s.onreadystatechange();
-                  }, 10);
-                  return OG_SEND.apply(this, arguments);
+                          var data = JSON.parse(body);
+                          if (data.mac || data.deviceMAC) {
+                              data.mac = targetMac;
+                              data.deviceMAC = targetMac;
+                              if (data.key) data.key = targetKey;
+                              body = JSON.stringify(data);
+                          }
+                      } catch(e) {}
+                  }
+                  
+                  // إعطاء استجابة تفعيل وهمية فقط لروابط التجديد لمنع ظهور أي شاشات توقف
+                  if (u.indexOf("renew") !== -1 || u.indexOf("activation") !== -1) {
+                      var s = this;
+                      setTimeout(function () {
+                          var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365, mac: targetMac, key: targetKey });
+                          try {
+                              Object.defineProperty(s, "status", { value: 200, writable: true });
+                              Object.defineProperty(s, "readyState", { value: 4, writable: true });
+                              Object.defineProperty(s, "responseText", { value: res, writable: true });
+                          } catch (e) {}
+                          if (s.onload) s.onload();
+                          if (s.onreadystatechange) s.onreadystatechange();
+                      }, 50);
+                      return;
+                  }
+                  
+                  return OG_SEND.call(this, body);
               };
 
-              // إخفاء العناصر المحددة بالبرتقالي فقط (مربع الأسعار وأزرار التجديد)
+              // الإخفاء الجذري لكل نصوص الانتهاء والتجديد (البرتقالية وغيرها)
               setInterval(function() {
-                  var allElements = document.querySelectorAll("div, button, span, p, a");
-                  for(var i=0; i<allElements.length; i++) {
-                      var text = (allElements[i].innerText || "").toLowerCase();
-                      if(
-                          text.indexOf("six months activation") !== -1 || 
-                          text.indexOf("one year activation") !== -1 || 
-                          text.indexOf("renew activation") !== -1 || 
-                          text.indexOf("i have activation") !== -1
+                  var elements = document.querySelectorAll("div, button, span, p, h1, h2, h3, h4, h5");
+                  for (var i = 0; i < elements.length; i++) {
+                      var txt = (elements[i].innerText || "").toLowerCase();
+                      if (
+                          txt.indexOf("activation for egy player has expired") !== -1 ||
+                          txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("six months activation") !== -1 ||
+                          txt.indexOf("one year activation") !== -1 ||
+                          txt.indexOf("renew activation") !== -1 ||
+                          txt.indexOf("i have activation") !== -1 ||
+                          txt.indexOf("after renewing the activation") !== -1
                       ) {
-                          if(allElements[i].offsetHeight < 300) {
-                              allElements[i].style.display = "none";
-                          }
+                          elements[i].style.display = "none";
                       }
                   }
-              }, 100);
-
+              }, 150);
           })(window);
           EOF
           
