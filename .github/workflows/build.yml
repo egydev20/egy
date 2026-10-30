@@ -1,4 +1,4 @@
-name: Build APK Connected to Hostinger PHP
+name: Scan and Build APK
 
 on:
   push:
@@ -28,64 +28,13 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Clean bypass.js (Restore Internet & Home UI)
+      - name: Scan APK Internal Files & Structure
         run: |
-          mkdir -p decoded_apk/assets/Web
-          cat << 'EOF' > decoded_apk/assets/Web/bypass.js
-          (function (win) {
-              "use strict";
-              var targetMac = "34:B2:0A:EF:C1:36";
-              var targetKey = "320155209";
-              var API_URL = "https://egyplayer.com/API/router.php";
-
-              // حقن بيانات التفعيل في الذاكرة المحلية للمتصفح المدمج لتجاوز الفحص المحلي
-              try {
-                  localStorage.setItem("status", "active");
-                  localStorage.setItem("Status", "active");
-                  localStorage.setItem("IsValid", "true");
-                  localStorage.setItem("active", "true");
-                  localStorage.setItem("RemainDays", "365");
-                  localStorage.setItem("deviceMAC", targetMac);
-                  localStorage.setItem("deviceKey", targetKey);
-              } catch(e) {}
-
-              // إرسال نبضة اتصال صامتة للوحة التحكم في الخلفية دون اعتراض الاتصالات الحقيقية للتطبيق
-              var syncServer = function() {
-                  try {
-                      var xhr = new XMLHttpRequest();
-                      xhr.open("POST", API_URL, true);
-                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
-                  } catch(e) {}
-              };
-              setInterval(syncServer, 10000);
-              setTimeout(syncServer, 500);
-
-              // إخفاء نصوص انتهاء الصلاحية والتنبيهات المزعجة فقط، مع ترك الهيكل والواجهة الرئيسية ظاهرة تماماً
-              setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4");
-                  for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      if (
-                          txt.indexOf("activation for egy player has expired") !== -1 ||
-                          txt.indexOf("please renew your activation") !== -1 ||
-                          txt.indexOf("status: expired") !== -1 ||
-                          txt.indexOf("six months activation") !== -1 ||
-                          txt.indexOf("one year activation") !== -1 ||
-                          txt.indexOf("renew activation") !== -1 ||
-                          txt.indexOf("i have activation") !== -1 ||
-                          txt.indexOf("after renewing the activation") !== -1
-                      ) {
-                          elements[i].style.display = "none";
-                      }
-                  }
-              }, 200);
-
-          })(window);
-          EOF
-          
-          sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
-          sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
+          echo "=== List files in assets/Web ==="
+          find decoded_apk/assets -type f
+          echo "=== Searching for expired/activation logic ==="
+          grep -rnw 'decoded_apk/assets' -e 'expired' || true
+          grep -rnw 'decoded_apk/assets' -e 'activation' || true
 
       - name: Rebuild, Align and Sign APK
         run: |
