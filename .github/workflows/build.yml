@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject bypass.js (Auto Redirect to Home)
+      - name: Inject bypass.js (Fix UI Display)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -46,47 +46,44 @@ jobs:
                   localStorage.setItem("RemainDays", "365");
               } catch(e) {}
 
-              // مزامنة الاتصال بالسيرفر وإجبار الواجهة على تخطي الشاشة الحالية
+              // مزامنة الاتصال بالسيرفر بصمت
               var syncServer = function() {
                   var xhr = new XMLHttpRequest();
                   xhr.open("POST", API_URL, true);
                   xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                  xhr.onreadystatechange = function() {
-                      if (xhr.readyState === 4 && xhr.status === 200) {
-                          try {
-                              // البحث عن أي عناصر تحكم أو أزرار تحديث/تخطي والضغط عليها برمجياً لفتح القنوات
-                              var buttons = document.querySelectorAll("button, a, div");
-                              for (var i = 0; i < buttons.length; i++) {
-                                  var txt = (buttons[i].innerText || "").trim().toLowerCase();
-                                  if (txt === "refresh" || txt === "ok" || txt === "continue" || txt === "dismis") {
-                                      buttons[i].click();
-                                  }
-                              }
-                          } catch(e) {}
-                      }
-                  };
                   xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
               };
-
               setInterval(syncServer, 5000);
               setTimeout(syncServer, 300);
 
-              // إخفاء تنبيه انتهاء الصلاحية وتوجيه المتصفح المدمج إن أمكن
+              // إخفاء نصوص التنبيه والأخطاء فقط، وإظهار الشاشة الرئيسية
               setInterval(function() {
-                  var elements = document.querySelectorAll("div, button, span, p");
+                  var elements = document.querySelectorAll("div, span, p, h1, h2, h3, h4");
                   for (var i = 0; i < elements.length; i++) {
                       var txt = (elements[i].innerText || "").trim().toLowerCase();
+                      
+                      // إخفاء نصوص التجديد فقط دون إخفاء الشاشة الخلفية
                       if (
                           txt.indexOf("activation for egy player has expired") !== -1 ||
                           txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("six months activation") !== -1 ||
+                          txt.indexOf("one year activation") !== -1 ||
                           txt.indexOf("renew activation") !== -1 ||
                           txt.indexOf("i have activation") !== -1
                       ) {
-                          // بدلاً من إخفاء الحاوية بالكامل، نقوم بإخفاء النص المزعج فقط
                           elements[i].style.display = "none";
                       }
                   }
-              }, 100);
+
+                  // التأكد من أن أزرار التحديث أو العودة واضحة وليست مخفية
+                  var buttons = document.querySelectorAll("button, a");
+                  for (var j = 0; j < buttons.length; j++) {
+                      var bTxt = (buttons[j].innerText || "").trim().toLowerCase();
+                      if (bTxt === "refresh" || bTxt === "back") {
+                          buttons[j].style.display = "inline-block";
+                      }
+                  }
+              }, 150);
 
           })(window);
           EOF
