@@ -1,4 +1,4 @@
-name: Scan and Build APK
+name: Build APK Connected to Hostinger PHP
 
 on:
   push:
@@ -28,13 +28,67 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Scan APK Internal Files & Structure
+      - name: Inject Final bypass.js (Native Local Storage Sync)
         run: |
-          echo "=== List files in assets/Web ==="
-          find decoded_apk/assets -type f
-          echo "=== Searching for expired/activation logic ==="
-          grep -rnw 'decoded_apk/assets' -e 'expired' || true
-          grep -rnw 'decoded_apk/assets' -e 'activation' || true
+          mkdir -p decoded_apk/assets/Web
+          cat << 'EOF' > decoded_apk/assets/Web/bypass.js
+          (function (win) {
+              "use strict";
+              var targetMac = "34:B2:0A:EF:C1:36";
+              var targetKey = "320155209";
+              var API_URL = "https://egyplayer.com/API/router.php";
+
+              // حقن جميع متغيرات وحالات التفعيل المطلوبة ليتعرف عليها ملف duplexiptv الأساسي
+              try {
+                  localStorage.setItem("status", "active");
+                  localStorage.setItem("Status", "active");
+                  localStorage.setItem("IsValid", "true");
+                  localStorage.setItem("active", "true");
+                  localStorage.setItem("is_active", "true");
+                  localStorage.setItem("RemainDays", "365");
+                  localStorage.setItem("expire_date", "2030-12-31");
+                  localStorage.setItem("deviceMAC", targetMac);
+                  localStorage.setItem("deviceKey", targetKey);
+                  localStorage.setItem("mac", targetMac);
+                  localStorage.setItem("key", targetKey);
+              } catch(e) {}
+
+              // الحفاظ على اتصال الخلفية مع لوحة التحكم دون قطع الإنترنت أو حجب الـ XHR
+              var syncServer = function() {
+                  try {
+                      var xhr = new XMLHttpRequest();
+                      xhr.open("POST", API_URL, true);
+                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
+                  } catch(e) {}
+              };
+              setInterval(syncServer, 10000);
+              setTimeout(syncServer, 300);
+
+              // إخفاء تنبيهات انتهاء الصلاحية والتجديد الصريحة فقط دون المساس بعناصر الشاشة الرئيسية
+              setInterval(function() {
+                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4");
+                  for (var i = 0; i < elements.length; i++) {
+                      var txt = (elements[i].innerText || "").trim().toLowerCase();
+                      if (
+                          txt.indexOf("activation for egy player has expired") !== -1 ||
+                          txt.indexOf("please renew your activation") !== -1 ||
+                          txt.indexOf("status: expired") !== -1 ||
+                          txt.indexOf("six months activation") !== -1 ||
+                          txt.indexOf("one year activation") !== -1 ||
+                          txt.indexOf("renew activation") !== -1 ||
+                          txt.indexOf("i have activation") !== -1
+                      ) {
+                          elements[i].style.display = "none";
+                      }
+                  }
+              }, 200);
+
+          })(window);
+          EOF
+          
+          sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
+          sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
 
       - name: Rebuild, Align and Sign APK
         run: |
