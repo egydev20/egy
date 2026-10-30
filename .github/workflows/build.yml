@@ -1,4 +1,4 @@
-name: Build Original APK with Domain Redirect
+name: Build APK Bypass Region Check
 
 on:
   push:
@@ -24,19 +24,48 @@ jobs:
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
           
-          # تحميل النسخة الأصلية الخام التي قمت برفعها
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
-          
-          # فك التطبيق مع الاحتفاظ بالموارد الخام دون فك تشفير الـ XML الثنائي
           apktool d -r original.apk -o decoded_apk
 
-      - name: Replace Domain and Sync with Hostinger
+      - name: Bypass Region Check & Redirect Domain
         run: |
-          echo "=== Replacing duplexplay.com with egyplayer.com in Web Assets ==="
+          # استبدال الدومينات لتوجيه الاتصال لاستضافتك
           find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
           find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|www.duplexplay.com|egyplayer.com|g' {} +
 
-          # التأكد من عدم وجود أي قيود توقيع تعيق التشغيل
+          # إنشاء سكربت تجاوز فحص المنطقة وإخفاء رسالة الخطأ
+          cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
+          (function(win) {
+              "use strict";
+              // حقن المتطلبات لتجاوز أي قيود إقليمية
+              try {
+                  localStorage.setItem("country_supported", "true");
+                  localStorage.setItem("region_check", "passed");
+              } catch(e) {}
+
+              // إخفاء رسالة خطأ المنطقة وفحص العناصر برمجياً
+              setInterval(function() {
+                  try {
+                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                      for (var i = 0; i < elements.length; i++) {
+                          var txt = (elements[i].innerText || "").trim().toLowerCase();
+                          if (
+                              txt.indexOf("not supported in your region") !== -1 ||
+                              txt.indexOf("region") !== -1 ||
+                              txt.indexOf("country") !== -1
+                          ) {
+                              elements[i].style.display = "none";
+                          }
+                      }
+                  } catch(e) {}
+              }, 50);
+          })(window);
+          EOF
+
+          if [ -f "decoded_apk/assets/Web/index.html" ]; then
+              sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
+          fi
+
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
 
       - name: Rebuild, Align and Sign APK
