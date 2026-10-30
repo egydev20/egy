@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject bypass.js (Fix Internet & Hide UI)
+      - name: Inject bypass.js (Fix Connection & Hide Specific UI)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -36,82 +36,68 @@ jobs:
               "use strict";
               var targetMac = "34:B2:0A:EF:C1:36";
               var targetKey = "320155209";
+              var API_URL = "https://egyplayer.com/API/router.php";
 
-              try {
-                  localStorage.setItem("RemainDays", "365");
-                  localStorage.setItem("Status", "active");
-                  localStorage.setItem("IsValid", "true");
-                  localStorage.setItem("__persistUID", targetMac);
-                  localStorage.setItem("__deviceMAC", targetMac);
-                  localStorage.setItem("__deviceKey", targetKey);
-              } catch(e) {}
-
-              if (win.PlayerInterface1) {
-                  win.PlayerInterface1.getDeviceId = function() { return targetMac; };
-              }
-
-              // تتبع الروابط بشكل صحيح دون كسر الاتصال
+              // 1. إصلاح الاتصال: السماح للإنترنت بالعمل وتعديل الماك المرسل فقط للوحة
               var OG_OPEN = XMLHttpRequest.prototype.open;
               XMLHttpRequest.prototype.open = function(method, url) {
-                  if (url) this._url = url.toString().toLowerCase();
+                  this._url = url;
                   return OG_OPEN.apply(this, arguments);
               };
 
-              // اعتراض طلبات الشبكة لتعديل الماك المُرسل للسيرفر فقط، والسماح للإنترنت بالعمل
               var OG_SEND = XMLHttpRequest.prototype.send;
               XMLHttpRequest.prototype.send = function (body) {
-                  var u = this._url || "";
-                  
-                  // تعديل الماك في جسم الطلب إذا كان التطبيق يحاول إرسال بيانات
+                  // إذا كان الطلب يحتوي على بيانات JSON، نعدل الماك ليتطابق مع لوحة التحكم
                   if (body && typeof body === "string" && body.indexOf("{") !== -1) {
                       try {
                           var data = JSON.parse(body);
-                          if (data.mac || data.deviceMAC) {
+                          if (data.mac || data.deviceMAC || data.deviceID) {
                               data.mac = targetMac;
                               data.deviceMAC = targetMac;
-                              if (data.key) data.key = targetKey;
+                              data.deviceID = targetMac;
+                              data.key = targetKey;
+                              data.deviceKey = targetKey;
                               body = JSON.stringify(data);
                           }
                       } catch(e) {}
                   }
-                  
-                  // إعطاء استجابة تفعيل وهمية فقط لروابط التجديد لمنع ظهور أي شاشات توقف
-                  if (u.indexOf("renew") !== -1 || u.indexOf("activation") !== -1) {
-                      var s = this;
-                      setTimeout(function () {
-                          var res = JSON.stringify({ Status: true, status: "active", IsValid: true, RemainDays: 365, mac: targetMac, key: targetKey });
-                          try {
-                              Object.defineProperty(s, "status", { value: 200, writable: true });
-                              Object.defineProperty(s, "readyState", { value: 4, writable: true });
-                              Object.defineProperty(s, "responseText", { value: res, writable: true });
-                          } catch (e) {}
-                          if (s.onload) s.onload();
-                          if (s.onreadystatechange) s.onreadystatechange();
-                      }, 50);
-                      return;
-                  }
-                  
+                  // إرسال الطلب بشكل طبيعي جداً دون إيقافه
                   return OG_SEND.call(this, body);
               };
 
-              // الإخفاء الجذري لكل نصوص الانتهاء والتجديد (البرتقالية وغيرها)
+              // 2. المزامنة المستمرة مع السيرفر الخاص بك
+              var syncServer = function() {
+                  try {
+                      var xhr = new XMLHttpRequest();
+                      xhr.open("POST", API_URL, true);
+                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
+                  } catch(e) {}
+              };
+              setInterval(syncServer, 10000);
+              setTimeout(syncServer, 500);
+
+              // 3. إخفاء دقيق للعناصر المحددة بالبرتقالي فقط
               setInterval(function() {
-                  var elements = document.querySelectorAll("div, button, span, p, h1, h2, h3, h4, h5");
+                  var elements = document.querySelectorAll("div, button, span");
                   for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").toLowerCase();
-                      if (
-                          txt.indexOf("activation for egy player has expired") !== -1 ||
-                          txt.indexOf("please renew your activation") !== -1 ||
-                          txt.indexOf("six months activation") !== -1 ||
-                          txt.indexOf("one year activation") !== -1 ||
-                          txt.indexOf("renew activation") !== -1 ||
-                          txt.indexOf("i have activation") !== -1 ||
-                          txt.indexOf("after renewing the activation") !== -1
-                      ) {
+                      var txt = (elements[i].innerText || "").trim().toLowerCase();
+                      
+                      // إخفاء أزرار التفعيل والتجديد فقط
+                      if (txt === "renew activation" || txt === "i have activation") {
                           elements[i].style.display = "none";
                       }
+                      
+                      // إخفاء صندوق الأسعار فقط
+                      if (txt.indexOf("six months activation cost") !== -1 || txt.indexOf("one year activation cost") !== -1) {
+                          // التأكد من إخفاء الصندوق الداخلي فقط وليس خلفية الشاشة بأكملها
+                          if (elements[i].offsetHeight < 250) {
+                              elements[i].style.display = "none";
+                          }
+                      }
                   }
-              }, 150);
+              }, 200);
+
           })(window);
           EOF
           
