@@ -1,5 +1,36 @@
-      - name: Replace bypass.js with Instant Activator
+name: Build APK Connected to Hostinger PHP
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Tools & Decompile
         run: |
+          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
+          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
+          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
+          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
+          MF_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk"
+          DIRECT_URL=$(curl -sL -A "Mozilla/5.0" "$MF_URL" | grep -o 'https://download[^"]*' | head -n 1)
+          curl -L -o original.apk "$DIRECT_URL"
+          apktool d -r original.apk -o decoded_apk
+
+      - name: Create bypass.js
+        run: |
+          mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
           (function (win) {
               "use strict";
@@ -8,14 +39,12 @@
               win.isLoaderOnlineCFEnabled = function () { return false; };
               win.isAppOnlineCFEnabled = function () { return false; };
 
-              // تثبيت الأيام المتبقية في الذاكرة لتكون مفعلة دائماً
               try {
                   localStorage.setItem("RemainDays", "365");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
               } catch(e) {}
 
-              // MAC & KEY
               win.getMac = function () {
                   var id = localStorage.getItem("__persistUID") || "EGY" + Math.random().toString(16).substring(2);
                   localStorage.setItem("__persistUID", id);
@@ -33,7 +62,6 @@
                   return "915937";
               };
 
-              // إرسال البيانات للسيرفر في الخلفية بصمت
               var syncServer = function() {
                   try {
                       var mac = win.getMac();
@@ -46,7 +74,6 @@
               setInterval(syncServer, 30000);
               setTimeout(syncServer, 1000);
 
-              // اعتراض أي طلب شبكي للتحقق من الانتهاء وإجباره على النجاح
               var OG_SEND = XMLHttpRequest.prototype.send;
               XMLHttpRequest.prototype.send = function () {
                   var u = (this._url || "").toLowerCase();
@@ -67,7 +94,6 @@
                   return OG_SEND.apply(this, arguments);
               };
 
-              // إخفاء رسائل الانتهاء من الواجهة نهائياً
               setInterval(function() {
                   var expiredDialogs = document.querySelectorAll("[class*='expired'], [class*='Expired']");
                   for(var i=0; i<expiredDialogs.length; i++) {
@@ -81,3 +107,16 @@
           # تعطيل فحص التوقيع
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
           sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
+
+      - name: Rebuild, Align and Sign APK
+        run: |
+          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
+          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
+          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: egyplayer-hostinger-release
+          path: egyplayer-hostinger.apk
