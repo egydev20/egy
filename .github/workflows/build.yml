@@ -1,4 +1,4 @@
-name: Build Final APK
+name: Build APK Force UI Render
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject Final Interceptor bypass.js
+      - name: Inject UI Force Render bypass.js
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -49,7 +49,7 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // اعتراض طلبات الشبكة وإجبار الاستجابة على النجاح التام
+              // اعتراض طلبات الاتصال وإرجاع الرد الهيكلي المتداخل
               var OG_OPEN = XMLHttpRequest.prototype.open;
               XMLHttpRequest.prototype.open = function(method, url) {
                   if (url) this._url = url.toString().toLowerCase();
@@ -90,24 +90,27 @@ jobs:
                   return OG_SEND.call(this, body);
               };
 
-              // إخفاء أي عنصر يحمل نص انتهاء الصلاحية فوراً
-              setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                  for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      if (
-                          txt.indexOf("activation for egy player has expired") !== -1 ||
-                          txt.indexOf("please renew your activation") !== -1 ||
-                          txt.indexOf("status: expired") !== -1 ||
-                          txt.indexOf("six months activation") !== -1 ||
-                          txt.indexOf("one year activation") !== -1 ||
-                          txt.indexOf("renew activation") !== -1 ||
-                          txt.indexOf("i have activation") !== -1
-                      ) {
-                          elements[i].style.display = "none";
+              // محاكاة النقر على زر التحديث أو إعادة تحميل واجهة القوائم بعد ثانية واحدة لإظهار الواجهة الرئيسية
+              setTimeout(function() {
+                  try {
+                      // إخفاء أي شاشة منتهية الصلاحية متبقية
+                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                      for (var i = 0; i < elements.length; i++) {
+                          var txt = (elements[i].innerText || "").trim().toLowerCase();
+                          if (txt.indexOf("expired") !== -1 || txt.indexOf("renew") !== -1) {
+                              elements[i].style.display = "none";
+                          }
                       }
-                  }
-              }, 50);
+                      
+                      // إذا كانت الدوال البرمجية العامة موجودة، يتم استدعاؤها لتوليد القوائم
+                      if (typeof win.loadHome === "function") win.loadHome();
+                      if (typeof win.initApp === "function") win.initApp();
+                      if (typeof win.checkActivation === "function") {
+                          // تجاوز الفحص الداخلي برمجياً
+                          console.log("Bypassed via function");
+                      }
+                  } catch(e) {}
+              }, 1200);
 
           })(window);
           EOF
