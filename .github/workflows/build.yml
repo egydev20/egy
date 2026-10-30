@@ -1,4 +1,4 @@
-name: Bypass Signature Check and Build
+name: Restructure APK for PHP Backend
 
 on:
   push:
@@ -28,13 +28,23 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Neutralize Signature Check and Fix URL
+      - name: Inspect Web Assets & Fix Smali
         run: |
-          echo "=== 1. توجيه الرابط إلى سيرفرك على هوستنجر ==="
-          find decoded_apk -type f -name "*.smali" -exec sed -i 's|https://egyplayer\.com|https://egyplayer.com/egypro/api|g' {} + || true
+          echo "=== 1. محتوى ملفات loader.js و bypass.js و index.html ==="
+          cat decoded_apk/assets/Web/index.html || true
+          echo "--- loader.js ---"
+          cat decoded_apk/assets/Web/loader.js || true
+          echo "--- bypass.js ---"
+          cat decoded_apk/assets/Web/bypass.js || true
 
-          echo "=== 2. إبطال عمل فحص التوقيع في f1.smali ==="
-          # استبدال عملية جلب التوقيعات بقيمة تجعل التطبيق يظن أن التوقيع سليم 100%
+          echo -e "\n=== 2. البحث عن الروابط داخل ملف الجافاسكريبت الرئيسي ==="
+          grep -oE ".{0,40}(http|API|EndPoint|egyplayer|duplex|status|mac|expire).{0,40}" decoded_apk/assets/Web/duplexiptv.sob.min_android.js | head -n 60 || true
+
+          echo -e "\n=== 3. ضبط مسار الـ API في Smali ليتصل بـ PHP مباشرة ==="
+          # جعل المسار يطلب ملف الـ PHP مباشرة من الجذر
+          sed -i 's|API/Main/AddRenewalSubscription|API/Main/AddRenewalSubscription.php|g' decoded_apk/smali/c/b/x0.smali || true
+
+          # تعطيل فحص التوقيع
           sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
           sed -i 's/iget-object v1, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v1, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
 
@@ -43,11 +53,10 @@ jobs:
           apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
           zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-nosig.apk aligned.apk
-          apksigner verify -v egyplayer-nosig.apk
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-php-ready.apk aligned.apk
 
-      - name: Upload Clean Unlocked APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-unlocked-release
-          path: egyplayer-nosig.apk
+          name: egyplayer-php-ready
+          path: egyplayer-php-ready.apk
