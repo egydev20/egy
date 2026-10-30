@@ -1,4 +1,4 @@
-name: Build Stable APK Clean Mode
+name: Deep Diagnostic Scan and Build
 
 on:
   push:
@@ -28,7 +28,26 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Clean and Safe bypass.js Injection
+      - name: Comprehensive Diagnostic Scan
+        run: |
+          echo "=========================================="
+          echo "1. Scanning all JS files inside assets/Web"
+          echo "=========================================="
+          find decoded_apk/assets/Web -name "*.js"
+          
+          echo "=========================================="
+          echo "2. Searching for license/activation endpoints"
+          echo "=========================================="
+          grep -rnw 'decoded_apk/assets/Web' -e 'http' || true
+          grep -rnw 'decoded_apk/assets/Web' -e 'api' || true
+          grep -rnw 'decoded_apk/assets/Web' -e 'status' || true
+
+          echo "=========================================="
+          echo "3. Checking index.html structure"
+          echo "=========================================="
+          head -n 30 decoded_apk/assets/Web/index.html || true
+
+      - name: Inject Diagnostic bypass.js & Error Logger
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -37,7 +56,22 @@ jobs:
               var targetMac = "34:B2:0A:EF:C1:36";
               var targetKey = "320155209";
 
-              // 1. حقن بيانات التفعيل مباشرة لقرائتها محلياً دون أخطاء
+              // التقاط أي خطأ جافا سكربت وإظهاره على الشاشة لكي نعرف سبب الشاشة الزرقاء
+              window.addEventListener('error', function(event) {
+                  var errDiv = document.createElement('div');
+                  errDiv.style.position = 'fixed';
+                  errDiv.style.top = '0';
+                  errDiv.style.left = '0';
+                  errDiv.style.width = '100%';
+                  errDiv.style.background = 'red';
+                  errDiv.style.color = 'white';
+                  errDiv.style.zIndex = '999999';
+                  errDiv.style.padding = '10px';
+                  errDiv.style.fontSize = '14px';
+                  errDiv.innerText = 'JS Error: ' + event.message + ' at ' + event.filename + ':' + event.lineno;
+                  document.body.appendChild(errDiv);
+              });
+
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
@@ -49,7 +83,7 @@ jobs:
                   localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // 2. إخفاء رسائل انتهاء الصلاحية إن وجدت دون التأثير على عمل الواجهة
+              // إخفاء تنبيهات انتهاء الصلاحية
               setInterval(function() {
                   try {
                       var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
@@ -69,7 +103,6 @@ jobs:
           })(window);
           EOF
 
-          # ربط السكربت بسلام في ملف index.html
           if [ -f "decoded_apk/assets/Web/index.html" ]; then
               sed -i 's/<head>/<head><script src="bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
           fi
