@@ -9,7 +9,6 @@
               win.isLoaderOnlineCFEnabled = function () { return false; };
               win.isAppOnlineCFEnabled = function () { return false; };
 
-              // تثبيت الماك والمفتاح ليطابقان لوحة التحكم تماماً ودون تغيير
               win.getMac = function () {
                   return "34:B2:0A:EF:C1:36";
               };
@@ -27,7 +26,6 @@
                   localStorage.setItem("IsValid", "true");
               } catch(e) {}
 
-              // إرسال البيانات للسيرفر لتسجيل الجهاز في لوحة التحكم تلقائياً
               var syncServer = function() {
                   try {
                       var xhr = new XMLHttpRequest();
@@ -39,7 +37,6 @@
               setInterval(syncServer, 20000);
               setTimeout(syncServer, 500);
 
-              // اعتراض أي فحص للانتهاء وإجباره على قبول التفعيل
               var OG_SEND = XMLHttpRequest.prototype.send;
               XMLHttpRequest.prototype.send = function () {
                   var u = (this._url || "").toLowerCase();
@@ -60,7 +57,6 @@
                   return OG_SEND.apply(this, arguments);
               };
 
-              // إزالة وإخفاء نوافذ التجديد والدفع نهائياً من الواجهة
               setInterval(function() {
                   var dialogs = document.querySelectorAll("[class*='expired'], [class*='Expired'], [class*='activation'], [class*='Activation']");
                   for(var i=0; i<dialogs.length; i++) {
