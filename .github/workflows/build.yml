@@ -28,7 +28,7 @@ jobs:
           curl -L -o original.apk "$DIRECT_URL"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Inject bypass.js (Fix UI Display)
+      - name: Inject Clean bypass.js (Restore Home UI)
         run: |
           mkdir -p decoded_apk/assets/Web
           cat << 'EOF' > decoded_apk/assets/Web/bypass.js
@@ -38,31 +38,34 @@ jobs:
               var targetKey = "320155209";
               var API_URL = "https://egyplayer.com/API/router.php";
 
+              // ضبط حالة التفعيل محلياً لضمان فتح الواجهة الرئيسية مباشرة
               try {
                   localStorage.setItem("status", "active");
                   localStorage.setItem("Status", "active");
                   localStorage.setItem("IsValid", "true");
                   localStorage.setItem("active", "true");
                   localStorage.setItem("RemainDays", "365");
+                  localStorage.setItem("deviceMAC", targetMac);
+                  localStorage.setItem("deviceKey", targetKey);
               } catch(e) {}
 
-              // مزامنة الاتصال بالسيرفر بصمت
+              // مزامنة صامتة مع السيرفر في الخلفية
               var syncServer = function() {
-                  var xhr = new XMLHttpRequest();
-                  xhr.open("POST", API_URL, true);
-                  xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-                  xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
+                  try {
+                      var xhr = new XMLHttpRequest();
+                      xhr.open("POST", API_URL, true);
+                      xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+                      xhr.send(JSON.stringify({ mac: targetMac, key: targetKey }));
+                  } catch(e) {}
               };
-              setInterval(syncServer, 5000);
-              setTimeout(syncServer, 300);
+              setInterval(syncServer, 10000);
+              setTimeout(syncServer, 200);
 
-              // إخفاء نصوص التنبيه والأخطاء فقط، وإظهار الشاشة الرئيسية
+              // إخفاء النصوص المحددة فقط داخل العناصر النصية الصغيرة دون المساس بالهيكل أو الواجهة
               setInterval(function() {
-                  var elements = document.querySelectorAll("div, span, p, h1, h2, h3, h4");
-                  for (var i = 0; i < elements.length; i++) {
-                      var txt = (elements[i].innerText || "").trim().toLowerCase();
-                      
-                      // إخفاء نصوص التجديد فقط دون إخفاء الشاشة الخلفية
+                  var allTags = document.querySelectorAll("span, p, h1, h2, h3, h4");
+                  for (var i = 0; i < allTags.length; i++) {
+                      var txt = (allTags[i].innerText || "").trim().toLowerCase();
                       if (
                           txt.indexOf("activation for egy player has expired") !== -1 ||
                           txt.indexOf("please renew your activation") !== -1 ||
@@ -71,19 +74,10 @@ jobs:
                           txt.indexOf("renew activation") !== -1 ||
                           txt.indexOf("i have activation") !== -1
                       ) {
-                          elements[i].style.display = "none";
+                          allTags[i].style.display = "none";
                       }
                   }
-
-                  // التأكد من أن أزرار التحديث أو العودة واضحة وليست مخفية
-                  var buttons = document.querySelectorAll("button, a");
-                  for (var j = 0; j < buttons.length; j++) {
-                      var bTxt = (buttons[j].innerText || "").trim().toLowerCase();
-                      if (bTxt === "refresh" || bTxt === "back") {
-                          buttons[j].style.display = "inline-block";
-                      }
-                  }
-              }, 150);
+              }, 300);
 
           })(window);
           EOF
