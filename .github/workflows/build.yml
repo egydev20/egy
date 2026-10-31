@@ -1,4 +1,4 @@
-name: Build and Link EGY PLAYER
+name: Build Stable EGY PLAYER
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
 
       - name: Install Tools & Download APK
         run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl python3
+          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
@@ -30,15 +30,14 @@ jobs:
           curl -L -o original.apk "$DIRECT_LINK"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Comprehensive Link Replacement to New Subdomain
+      - name: Safe Link Replacement & Network Security
         run: |
-          # استبدال شامل لكل احتمالات الروابط القديمة بالدومين الفرعي الجديد
+          # استبدال الروابط القديمة بالدومين الفرعي الجديد بكل دقة
           find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" -o -name "*.json" \) -exec sed -i 's|https://egyplayer.com|https://edit.egyplayer.com|gI' {} +
           find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" -o -name "*.json" \) -exec sed -i 's|http://egyplayer.com|https://edit.egyplayer.com|gI' {} +
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" -o -name "*.json" \) -exec sed -i 's|egyplayer.com/API|edit.egyplayer.com|gI' {} +
           find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" -o -name "*.json" \) -exec sed -i 's|egyplayer.com|edit.egyplayer.com|gI' {} +
 
-          # تفعيل الشبكة الآمنة لضمان عدم حظر الاتصال بالدومين
+          # إضافة إعدادات الأمان للشبكة لضمان قبول الاتصال بالاستضافة
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -55,29 +54,6 @@ jobs:
           if ! grep -q "networkSecurityConfig" decoded_apk/AndroidManifest.xml; then
               sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
           fi
-
-          # تجاوز شاشة التحقق والتفعيل برمجياً من ملفات الـ Smali
-          python3 - << 'PYTHON_SCRIPT'
-          import os, glob
-
-          for filepath in glob.glob('decoded_apk/**/*.smali', recursive=True):
-              try:
-                  with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                      content = f.read()
-                  
-                  modified = False
-                  if 'Activation' in content or 'expired' in content or 'isExpired' in content or 'IsValid' in content:
-                      content = content.replace('const/4 v0, 0x0', 'const/4 v0, 0x1')
-                      content = content.replace('if-eqz', 'if-nez')
-                      modified = True
-                  
-                  if modified:
-                      with open(filepath, 'w', encoding='utf-8') as f:
-                          f.write(content)
-              except Exception as e:
-                  pass
-          print("All links successfully redirected to https://edit.egyplayer.com")
-          PYTHON_SCRIPT
 
       - name: Rebuild, Align and Sign APK
         run: |
