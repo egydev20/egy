@@ -1,4 +1,4 @@
-name: Build APK Full Patch
+name: Build APK EGY PLAYER Upgrade
 
 on:
   push:
@@ -27,27 +27,30 @@ jobs:
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Change App Name to EGY PLAYER
+      - name: Change App Name and Bump Version for Upgrade
         run: |
-          # 1. تعديل اسم التطبيق في ملف strings.xml الأساسي
+          # 1. تغيير اسم التطبيق
           find decoded_apk/res -type f -name "strings.xml" -exec sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">EGY PLAYER</string>|g' {} +
-          
-          # 2. البحث عن أي تسمية مباشرة في AndroidManifest.xml وتحديثها
           if [ -f "decoded_apk/AndroidManifest.xml" ]; then
               sed -i 's|android:label="[^"]*"|android:label="EGY PLAYER"|g' decoded_apk/AndroidManifest.xml
           fi
           
-          echo "تم تحديث اسم التطبيق بنجاح إلى EGY PLAYER"
+          # 2. رفع إصدار التطبيق (Version Code & Name) لكي يقبل نظام أندرويد الترقية
+          # نقوم بتغيير رقم الإصدار إلى 100 لضمان أنه أعلى من أي إصدار قديم
+          sed -i "s/versionCode: .*/versionCode: '100'/g" decoded_apk/apktool.yml
+          sed -i "s/versionName: .*/versionName: '2.0.0'/g" decoded_apk/apktool.yml
+          
+          echo "تم تحديث الاسم إلى EGY PLAYER ورفع الإصدار للترقية"
 
       - name: Patch APK (Bypass SSL, Domain, Region)
         run: |
-          # 1. استبدال شامل لكل النطاقات (مع تجاهل حالة الأحرف)
+          # استبدال الدومينات
           find decoded_apk -type f -exec sed -i 's|duplexplay\.com|egyplayer.com|gI' {} +
           find decoded_apk -type f -exec sed -i 's|duplexiptv\.com|egyplayer.com|gI' {} +
           find decoded_apk -type f -exec sed -i 's|edit\.duplexplay|egyplayer.com|gI' {} +
           find decoded_apk -type f -exec sed -i 's|api\.duplexplay|egyplayer.com|gI' {} +
 
-          # 2. إعداد ملف الأمان (SSL) وتفعيل الـ Cleartext
+          # إعداد ملف الأمان SSL
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -60,19 +63,17 @@ jobs:
               </base-config>
           </network-security-config>
           EOF
-          sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
+          sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
 
-          # 3. ضرب حماية الـ CertificatePinner (تخطي فحص الشهادات)
+          # إيقاف فحص الشهادات (Certificate Pinner)
           find decoded_apk/smali* -type f -name "*.smali" -exec sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
           .method public final check(Ljava/lang/String;Ljava/util/List;)V\
               .locals 0\
               return-void\
           .end method' {} +
 
-          # 4. مسح نص رسالة المنطقة
+          # مسح رسالة المنطقة وحقن ملف التجاوز
           find decoded_apk -type f -exec sed -i 's/not supported in your region//g' {} +
-
-          # 5. سكربت إخفاء رسالة المنطقة في الويب
           cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
           (function() { 
               localStorage.setItem("country_supported", "true"); 
@@ -89,11 +90,15 @@ jobs:
           EOF
           find decoded_apk/assets -type f -name "*.html" -exec sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' {} +
 
-      - name: Rebuild, Align and Sign APK
+      - name: Rebuild, Align and Static Sign APK
         run: |
           apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
           zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
+          
+          # إنشاء شهادة موحدة تعتمد على بيانات ثابتة (Seed) لتجنب اختلاف التوقيع في التحديثات القادمة
+          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG" -ext SAN=dns:egyplayer.com
+          
+          # توقيع التطبيق بالشهادة
           apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
 
       - name: Upload APK
