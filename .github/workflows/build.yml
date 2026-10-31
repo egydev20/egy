@@ -1,71 +1,40 @@
-name: Inspect APK for Domains and SSL Pinning
+- name: Bypass Region Check & Redirect Domain (FIXED)
+  run: |
+    # 1. استبدال النطاقات داخل ملفات Smali (الكود البرمجي الفعلي)
+    # استبدال edit.duplexplay.com و edit.duplexiptv.com بالدومين الجديد
+    find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexplay.com|egyplayer.com|g' {} +
+    find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexiptv.com|egyplayer.com|g' {} +
+    find decoded_apk/smali* -type f -exec sed -i 's|api.duplexplay.com|egyplayer.com|g' {} +
+    find decoded_apk/smali* -type f -exec sed -i 's|api.duplexiptv.com|egyplayer.com|g' {} +
+    find decoded_apk/smali* -type f -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
+    find decoded_apk/smali* -type f -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
 
-on:
-  workflow_dispatch: # يسمح لك بتشغيله يدوياً من زر Run workflow
+    # 2. استبدال النطاقات في ملفات الويب (زي ما كنت عامل)
+    find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
+    find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
 
-jobs:
-  inspect:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    # 3. إنشاء سكربت تجاوز فحص المنطقة
+    cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
+    (function(win) {
+        "use strict";
+        try {
+            localStorage.setItem("country_supported", "true");
+            localStorage.setItem("region_check", "passed");
+        } catch(e) {}
+        setInterval(function() {
+            try {
+                var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                for (var i = 0; i < elements.length; i++) {
+                    var txt = (elements[i].innerText || "").trim().toLowerCase();
+                    if (txt.indexOf("not supported in your region") !== -1) {
+                        elements[i].style.display = "none";
+                    }
+                }
+            } catch(e) {}
+        }, 50);
+    })(window);
+    EOF
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Apktool
-        run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed grep
-          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
-          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
-          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-
-      - name: Download & Decode APK
-        run: |
-          # تحميل الـ APK الأصلي
-          curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
-          # فك التطبيق (بدون المصادر لتسريع العملية، أو استخدم apktool d original.apk -o decoded_apk لفك كل شيء)
-          apktool d original.apk -o decoded_apk
-
-      - name: Analyze APK (Extract URLs & Check SSL Pinning)
-        run: |
-          echo "==================================================" > inspection_report.txt
-          echo "1. الروابط والنطاقات المكتشفة داخل ملفات Smali (URLs in Smali):" >> inspection_report.txt
-          echo "==================================================" >> inspection_report.txt
-          # استخراج كل الروابط (http و https) من كود الجافا (Smali)
-          grep -rhoE "https?://[a-zA-Z0-9./?=_%:-]+" decoded_apk/smali* 2>/dev/null | sort -u >> inspection_report.txt
-          
-          echo -e "\n\n==================================================" >> inspection_report.txt
-          echo "2. البحث عن النطاقات القديمة (Duplex References):" >> inspection_report.txt
-          echo "==================================================" >> inspection_report.txt
-          # البحث عن أي أثر لكلمة duplexplay أو duplexiptv
-          grep -rn "duplexplay\|duplexiptv" decoded_apk/smali* 2>/dev/null | head -n 30 >> inspection_report.txt
-
-          echo -e "\n\n==================================================" >> inspection_report.txt
-          echo "3. فحص الـ SSL Pinning (هل التطبيق يرفض شهادات غير معروفة؟):" >> inspection_report.txt
-          echo "==================================================" >> inspection_report.txt
-          # البحث عن الكلاسات المسؤولة عن تثبيت الشهادات
-          grep -rln "CertificatePinner\|TrustManager\|HostnameVerifier\|OkHttpClient" decoded_apk/smali* 2>/dev/null >> inspection_report.txt
-
-          echo -e "\n\n==================================================" >> inspection_report.txt
-          echo "4. إعدادات الشبكة (Network Security Config):" >> inspection_report.txt
-          echo "==================================================" >> inspection_report.txt
-          grep -rn "network_security_config" decoded_apk/AndroidManifest.xml >> inspection_report.txt
-          find decoded_apk/res -name "*network_security*" >> inspection_report.txt
-
-          echo -e "\n\n==================================================" >> inspection_report.txt
-          echo "5. قائمة الملفات التي تحتوي على روابط داخل مجلد assets:" >> inspection_report.txt
-          echo "==================================================" >> inspection_report.txt
-          grep -rlE "https?://" decoded_apk/assets/ 2>/dev/null | head -n 20 >> inspection_report.txt
-
-          # طباعة التقرير في الـ Actions Log لكي تراه مباشرة
-          cat inspection_report.txt
-
-      - name: Upload Inspection Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: APK-Inspection-Report
-          path: inspection_report.txt
+    if [ -f "decoded_apk/assets/Web/index.html" ]; then
+        sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
+    fi
