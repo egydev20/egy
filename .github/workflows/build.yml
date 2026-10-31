@@ -1,4 +1,4 @@
-name: Build APK Bypass Region Check
+name: Build APK Bypass SSL & Region
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Tools & Download Original APK
+      - name: Install Tools & Download APK
         run: |
           sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
@@ -27,21 +27,18 @@ jobs:
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Bypass Region, Domain & SSL Pinning
+      - name: Patch APK (Bypass SSL, Domain, & Region)
         run: |
-          # 1. استبدال النطاقات داخل الكود
-          find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexiptv.com|egyplayer.com|g' {} +
-          find decoded_apk/smali* -type f -exec sed -i 's|api.duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk/smali* -type f -exec sed -i 's|api.duplexiptv.com|egyplayer.com|g' {} +
-          find decoded_apk/smali* -type f -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk/smali* -type f -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
+          # 1. استبدال شامل لكل النطاقات القديمة
+          find decoded_apk -type f -exec sed -i 's|duplexplay\.com|egyplayer.com|g' {} +
+          find decoded_apk -type f -exec sed -i 's|duplexiptv\.com|egyplayer.com|g' {} +
+          find decoded_apk -type f -exec sed -i 's|edit\.duplex|egyplayer.com|g' {} +
 
-          # 2. استبدال النطاقات في ملفات الويب
-          find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
+          # 2. مسح نص رسالة المنطقة من ملفات الموارد (عشان ميجيش يعرضها)
+          find decoded_apk -type f -exec sed -i 's/Sorry. This app is not supported in your region//g' {} +
+          find decoded_apk -type f -exec sed -i 's/not supported in your region//g' {} +
 
-          # 3. إضافة ملف يسمح بكل الشهادات (تجاوز حماية SSL)
+          # 3. إعداد ملف الأمان (SSL)
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -51,32 +48,46 @@ jobs:
                       <certificates src="system" />
                       <certificates src="user" />
                   </trust-anchors>
-              </base-config>
+          </base-config>
           </network-security-config>
           EOF
+          sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
 
-          # 4. ربط ملف الحماية الجديد بـ AndroidManifest
-          sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" /g' decoded_apk/AndroidManifest.xml
-
-          # 5. كسر حماية الـ Certificate Pinner داخل كود OkHttp إن وجد
-          grep -rl "CertificatePinner" decoded_apk/smali*/okhttp3/ 2>/dev/null | while read file; do
-            sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
+          # 4. ضرب حماية الـ CertificatePinner
+          find decoded_apk/smali* -type f -name "*.smali" -exec sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
           .method public final check(Ljava/lang/String;Ljava/util/List;)V\
               .locals 0\
               return-void\
-          .end method' "$file"
-          done
+          .end method' {} +
 
-          # 6. سكربت تجاوز فحص المنطقة (الويب)
+          # 5. سكربت قوي جداً لإخفاء رسالة المنطقة وتجاوزها برمجياً
           cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
           (function(win) {
               "use strict";
-              try { localStorage.setItem("country_supported", "true"); } catch(e) {}
+              try {
+                  localStorage.setItem("country_supported", "true");
+                  localStorage.setItem("region_check", "passed");
+                  localStorage.setItem("region", "US");
+                  localStorage.setItem("country", "US");
+              } catch(e) {}
+              
+              // إخفاء أي عنصر بيحتوي على كلمة region أو not supported
+              setInterval(function() {
+                  try {
+                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
+                      for (var i = 0; i < elements.length; i++) {
+                          var txt = (elements[i].innerText || "").trim().toLowerCase();
+                          if (txt.indexOf("not supported") !== -1 || txt.indexOf("region") !== -1) {
+                              elements[i].style.display = "none";
+                          }
+                      }
+                  } catch(e) {}
+              }, 50);
           })(window);
           EOF
-          if [ -f "decoded_apk/assets/Web/index.html" ]; then
-              sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
-          fi
+
+          # حقن السكربت في كل ملفات الـ HTML
+          find decoded_apk/assets -type f -name "*.html" -exec sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' {} +
 
       - name: Rebuild, Align and Sign APK
         run: |
