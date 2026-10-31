@@ -1,4 +1,4 @@
-name: Build APK Bypass Full
+name: Build APK Final Fix
 
 on:
   push:
@@ -27,23 +27,15 @@ jobs:
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Patch APK & Extract URLs
+      - name: Patch APK (Bypass SSL, Domain, & Region)
         run: |
-          # 1. إنشاء تقرير بكل الروابط الموجودة في الكود
-          echo "=== URLs Found in Smali ===" > urls_report.txt
-          grep -rhoE 'https?://[a-zA-Z0-9./?=_%:-]+' decoded_apk/smali* | sort -u >> urls_report.txt
+          # 1. الاستبدال الشامل (تعديل حرف P الكبير)
+          find decoded_apk -type f -exec sed -i 's|edit.duplexPlay.com|egyplayer.com|g' {} +
+          find decoded_apk -type f -exec sed -i 's|edit.duplexplay.com|egyplayer.com|g' {} +
+          find decoded_apk -type f -exec sed -i 's|duplexplay.com|egyplayer.com|gI' {} +
+          find decoded_apk -type f -exec sed -i 's|duplexiptv.com|egyplayer.com|gI' {} +
 
-          # 2. استبدال النطاقات (بشكل أوسع)
-          find decoded_apk -type f -exec sed -i 's|duplexplay\.com|egyplayer.com|g' {} +
-          find decoded_apk -type f -exec sed -i 's|duplexiptv\.com|egyplayer.com|g' {} +
-          find decoded_apk -type f -exec sed -i 's|edit\.duplexplay|egyplayer.com|g' {} +
-          find decoded_apk -type f -exec sed -i 's|api\.duplexplay|egyplayer.com|g' {} +
-
-          # 3. مسح نص رسالة المنطقة
-          find decoded_apk -type f -exec sed -i 's/Sorry. This app is not supported in your region//g' {} +
-          find decoded_apk -type f -exec sed -i 's/not supported in your region//g' {} +
-
-          # 4. إعداد ملف الأمان (SSL) وتفعيل الـ Cleartext
+          # 2. إعداد ملف الأمان (SSL) وتفعيل الـ Cleartext
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -58,17 +50,15 @@ jobs:
           EOF
           sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
 
-          # 5. ضرب حماية الـ CertificatePinner و TrustManager
+          # 3. ضرب حماية الـ CertificatePinner
           find decoded_apk/smali* -type f -name "*.smali" -exec sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
           .method public final check(Ljava/lang/String;Ljava/util/List;)V\
               .locals 0\
               return-void\
           .end method' {} +
 
-          # كسر فحص التوقيع (Signature Check)
-          find decoded_apk/smali* -type f -name "*.smali" -exec sed -i 's/iget-object v[0-9]*, v[0-9]*, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' {} + || true
-          
-          # 6. سكربت إخفاء المنطقة
+          # 4. مسح نص رسالة المنطقة وإخفاء العناصر
+          find decoded_apk -type f -exec sed -i 's/not supported in your region//g' {} +
           cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
           (function() { 
               localStorage.setItem("country_supported", "true"); 
@@ -92,10 +82,8 @@ jobs:
           keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
           apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
 
-      - name: Upload APK and URL Report
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-build-and-report
-          path: |
-            egyplayer-hostinger.apk
-            urls_report.txt
+          name: egyplayer-hostinger-release
+          path: egyplayer-hostinger.apk
