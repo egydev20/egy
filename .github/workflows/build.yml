@@ -1,52 +1,13 @@
-name: Build APK EGY PLAYER Upgrade
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install Tools & Download APK
-        run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl
-          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
-          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
-          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          
-          curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
-          apktool d -r original.apk -o decoded_apk
-
-      - name: Change App Name and Bump Version for Upgrade
-        run: |
-          # 1. تغيير اسم التطبيق
-          find decoded_apk/res -type f -name "strings.xml" -exec sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">EGY PLAYER</string>|g' {} +
-          if [ -f "decoded_apk/AndroidManifest.xml" ]; then
-              sed -i 's|android:label="[^"]*"|android:label="EGY PLAYER"|g' decoded_apk/AndroidManifest.xml
-          fi
-          
-          # 2. رفع إصدار التطبيق (Version Code & Name) للترقية
-          sed -i "s/versionCode: .*/versionCode: '100'/g" decoded_apk/apktool.yml
-          sed -i "s/versionName: .*/versionName: '2.0.0'/g" decoded_apk/apktool.yml
-
       - name: Patch App Network & Domains
         run: |
-          # 1. استبدال النطاقات في الملفات النصية فقط لتجنب إتلاف الصور والملفات الثنائية
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://edit\.duplexplay\.com|https://egyplayer.com/API|gI' {} +
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://api\.duplexplay\.com|https://egyplayer.com/API|gI' {} +
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|duplexplay\.com|egyplayer.com|gI' {} +
+          # استبدال أي نطاق فرعي لـ duplexplay بالرابط الخاص بك (يدعم http و https)
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://[a-zA-Z0-9.-]*duplexplay\.com|https://egyplayer.com/API|gI' {} +
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|http://[a-zA-Z0-9.-]*duplexplay\.com|https://egyplayer.com/API|gI' {} +
           
-          # 2. إعداد ملف الأمان (SSL) وتفعيل الـ Cleartext
+          # استبدال الكلمة المجردة إذا كانت تُستخدم في بناء الروابط ديناميكياً
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|duplexplay\.com|egyplayer.com/API|gI' {} +
+          
+          # إعداد ملف الأمان (SSL) لتخطي الحماية
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -60,46 +21,9 @@ jobs:
           </network-security-config>
           EOF
           
-          # حقن إعدادات الأمان بشرط ألا تكون موجودة مسبقاً
           if ! grep -q "networkSecurityConfig" decoded_apk/AndroidManifest.xml; then
               sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
           fi
 
-          # 3. تخطي CertificatePinner بطريقة آمنة
+          # تخطي CertificatePinner بالكامل
           find decoded_apk/smali* -type f -name "*.smali" -exec perl -0777 -pi -e 's/\.method public final check\(Ljava\/lang\/String;Ljava\/util\/List;\)V.*?\.end method/.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V\n    .locals 0\n    return-void\n.end method/gs' {} +
-
-      - name: Bypass Region Restrictions
-        run: |
-          find decoded_apk -type f -name "*.html" -exec sed -i 's/not supported in your region//g' {} +
-          cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
-          (function() { 
-              localStorage.setItem("country_supported", "true"); 
-              localStorage.setItem("region_check", "passed");
-              setInterval(function() {
-                  var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                  for (var i = 0; i < elements.length; i++) {
-                      if ((elements[i].innerText || "").indexOf("not supported") !== -1) {
-                          elements[i].style.display = "none";
-                      }
-                  }
-              }, 50);
-          })();
-          EOF
-          find decoded_apk/assets -type f -name "*.html" -exec sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' {} +
-
-      - name: Rebuild, Align and Static Sign APK
-        run: |
-          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
-          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-          
-          # إنشاء شهادة موحدة لتجنب اختلاف التوقيع في التحديثات
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG" -ext SAN=dns:egyplayer.com
-          
-          # توقيع التطبيق
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: egyplayer-hostinger-release
-          path: egyplayer-hostinger.apk
