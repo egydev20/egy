@@ -1,4 +1,4 @@
-name: Build APK Final Fix
+name: Build APK Full Patch
 
 on:
   push:
@@ -27,13 +27,13 @@ jobs:
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Patch APK (Bypass SSL, Domain, & Region)
+      - name: Patch APK (Bypass SSL, Domain, Region)
         run: |
-          # 1. الاستبدال الشامل (تعديل حرف P الكبير)
-          find decoded_apk -type f -exec sed -i 's|edit.duplexPlay.com|egyplayer.com|g' {} +
-          find decoded_apk -type f -exec sed -i 's|edit.duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk -type f -exec sed -i 's|duplexplay.com|egyplayer.com|gI' {} +
-          find decoded_apk -type f -exec sed -i 's|duplexiptv.com|egyplayer.com|gI' {} +
+          # 1. استبدال شامل لكل النطاقات (مع تجاهل حالة الأحرف)
+          find decoded_apk -type f -exec sed -i 's|duplexplay\.com|egyplayer.com|gI' {} +
+          find decoded_apk -type f -exec sed -i 's|duplexiptv\.com|egyplayer.com|gI' {} +
+          find decoded_apk -type f -exec sed -i 's|edit\.duplexplay|egyplayer.com|gI' {} +
+          find decoded_apk -type f -exec sed -i 's|api\.duplexplay|egyplayer.com|gI' {} +
 
           # 2. إعداد ملف الأمان (SSL) وتفعيل الـ Cleartext
           mkdir -p decoded_apk/res/xml
@@ -45,20 +45,22 @@ jobs:
                       <certificates src="system" />
                       <certificates src="user" />
                   </trust-anchors>
-          </base-config>
+              </base-config>
           </network-security-config>
           EOF
           sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
 
-          # 3. ضرب حماية الـ CertificatePinner
+          # 3. ضرب حماية الـ CertificatePinner (تخطي فحص الشهادات)
           find decoded_apk/smali* -type f -name "*.smali" -exec sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
           .method public final check(Ljava/lang/String;Ljava/util/List;)V\
               .locals 0\
               return-void\
           .end method' {} +
 
-          # 4. مسح نص رسالة المنطقة وإخفاء العناصر
+          # 4. مسح نص رسالة المنطقة
           find decoded_apk -type f -exec sed -i 's/not supported in your region//g' {} +
+
+          # 5. سكربت إخفاء رسالة المنطقة في الويب
           cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
           (function() { 
               localStorage.setItem("country_supported", "true"); 
