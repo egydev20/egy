@@ -5,8 +5,8 @@
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
           
-          # استبدل هذا الرابط بالرابط المباشر الخاص بك على استضافتك
+          # تنزيل التطبيق برابط مباشر من استضافتك
           curl -L -o original.apk "https://egyplayer.com/gen_signed.apk"
           
-          # فك ضغط التطبيق الخاص بك
+          # فك ضغط التطبيق
           apktool d -r original.apk -o decoded_apk
