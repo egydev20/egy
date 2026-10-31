@@ -1,4 +1,41 @@
-      - name: Extract and Save All App Links
+name: Build EGY PLAYER
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Tools & Download from MediaFire
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl
+          sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
+          sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
+          sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
+          
+          PAGE_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk/file"
+          DIRECT_LINK=$(curl -sL "$PAGE_URL" | grep -o 'href="https://download[^"]*"' | sed 's/href="//;s/"//' | head -n 1)
+          
+          if [ -z "$DIRECT_LINK" ]; then
+            echo "Error: Failed to extract direct MediaFire link."
+            exit 1
+          fi
+          
+          curl -L -o original.apk "$DIRECT_LINK"
+          apktool d -r original.apk -o decoded_apk
+
+      - name: Extract All App Links
         run: |
           grep -rnw 'decoded_apk/' -e 'http://' -e 'https://' > app_links.txt
 
