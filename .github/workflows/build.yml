@@ -1,11 +1,10 @@
-name: Build APK Bypass Region Check
+name: Inspect APK for Domains and SSL Pinning
 
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch: # يسمح لك بتشغيله يدوياً من زر Run workflow
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -17,66 +16,56 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Tools & Download Original APK
+      - name: Install Apktool
         run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner
+          sudo apt-get update && sudo apt-get install -y wget curl sed grep
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
-          
+
+      - name: Download & Decode APK
+        run: |
+          # تحميل الـ APK الأصلي
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
-          apktool d -r original.apk -o decoded_apk
+          # فك التطبيق (بدون المصادر لتسريع العملية، أو استخدم apktool d original.apk -o decoded_apk لفك كل شيء)
+          apktool d original.apk -o decoded_apk
 
-      - name: Bypass Region Check & Redirect Domain
+      - name: Analyze APK (Extract URLs & Check SSL Pinning)
         run: |
-          # استبدال الدومينات لتوجيه الاتصال لاستضافتك
-          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
-          find decoded_apk/assets/Web -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|www.duplexplay.com|egyplayer.com|g' {} +
+          echo "==================================================" > inspection_report.txt
+          echo "1. الروابط والنطاقات المكتشفة داخل ملفات Smali (URLs in Smali):" >> inspection_report.txt
+          echo "==================================================" >> inspection_report.txt
+          # استخراج كل الروابط (http و https) من كود الجافا (Smali)
+          grep -rhoE "https?://[a-zA-Z0-9./?=_%:-]+" decoded_apk/smali* 2>/dev/null | sort -u >> inspection_report.txt
+          
+          echo -e "\n\n==================================================" >> inspection_report.txt
+          echo "2. البحث عن النطاقات القديمة (Duplex References):" >> inspection_report.txt
+          echo "==================================================" >> inspection_report.txt
+          # البحث عن أي أثر لكلمة duplexplay أو duplexiptv
+          grep -rn "duplexplay\|duplexiptv" decoded_apk/smali* 2>/dev/null | head -n 30 >> inspection_report.txt
 
-          # إنشاء سكربت تجاوز فحص المنطقة وإخفاء رسالة الخطأ
-          cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
-          (function(win) {
-              "use strict";
-              // حقن المتطلبات لتجاوز أي قيود إقليمية
-              try {
-                  localStorage.setItem("country_supported", "true");
-                  localStorage.setItem("region_check", "passed");
-              } catch(e) {}
+          echo -e "\n\n==================================================" >> inspection_report.txt
+          echo "3. فحص الـ SSL Pinning (هل التطبيق يرفض شهادات غير معروفة؟):" >> inspection_report.txt
+          echo "==================================================" >> inspection_report.txt
+          # البحث عن الكلاسات المسؤولة عن تثبيت الشهادات
+          grep -rln "CertificatePinner\|TrustManager\|HostnameVerifier\|OkHttpClient" decoded_apk/smali* 2>/dev/null >> inspection_report.txt
 
-              // إخفاء رسالة خطأ المنطقة وفحص العناصر برمجياً
-              setInterval(function() {
-                  try {
-                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                      for (var i = 0; i < elements.length; i++) {
-                          var txt = (elements[i].innerText || "").trim().toLowerCase();
-                          if (
-                              txt.indexOf("not supported in your region") !== -1 ||
-                              txt.indexOf("region") !== -1 ||
-                              txt.indexOf("country") !== -1
-                          ) {
-                              elements[i].style.display = "none";
-                          }
-                      }
-                  } catch(e) {}
-              }, 50);
-          })(window);
-          EOF
+          echo -e "\n\n==================================================" >> inspection_report.txt
+          echo "4. إعدادات الشبكة (Network Security Config):" >> inspection_report.txt
+          echo "==================================================" >> inspection_report.txt
+          grep -rn "network_security_config" decoded_apk/AndroidManifest.xml >> inspection_report.txt
+          find decoded_apk/res -name "*network_security*" >> inspection_report.txt
 
-          if [ -f "decoded_apk/assets/Web/index.html" ]; then
-              sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
-          fi
+          echo -e "\n\n==================================================" >> inspection_report.txt
+          echo "5. قائمة الملفات التي تحتوي على روابط داخل مجلد assets:" >> inspection_report.txt
+          echo "==================================================" >> inspection_report.txt
+          grep -rlE "https?://" decoded_apk/assets/ 2>/dev/null | head -n 20 >> inspection_report.txt
 
-          sed -i 's/iget-object v2, v1, Landroid\/content\/pm\/PackageInfo;->signatures:\[Landroid\/content\/pm\/Signature;/const\/4 v2, 0x0/g' decoded_apk/smali/c/b/f1.smali || true
+          # طباعة التقرير في الـ Actions Log لكي تراه مباشرة
+          cat inspection_report.txt
 
-      - name: Rebuild, Align and Sign APK
-        run: |
-          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
-          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
-          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
-          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
-
-      - name: Upload APK
+      - name: Upload Inspection Report
         uses: actions/upload-artifact@v4
         with:
-          name: egyplayer-hostinger-release
-          path: egyplayer-hostinger.apk
+          name: APK-Inspection-Report
+          path: inspection_report.txt
