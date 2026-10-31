@@ -32,7 +32,43 @@ jobs:
             exit 1
           fi
           
-          echo "تم العثور على الرابط المباشر، جاري التنزيل..."
           curl -L -o original.apk "$DIRECT_LINK"
-          
           apktool d -r original.apk -o decoded_apk
+
+      - name: Patch App Domains & API
+        run: |
+          # استبدال النطاقات القديمة برابط الاستضافة الخاص بك
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://[a-zA-Z0-9.-]*duplexplay\.com|https://egyplayer.com/API|gI' {} +
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|http://[a-zA-Z0-9.-]*duplexplay\.com|https://egyplayer.com/API|gI' {} +
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|duplexplay\.com|egyplayer.com/API|gI' {} +
+          
+          # تفعيل الـ Cleartext وسماح اتصالات الشبكة
+          mkdir -p decoded_apk/res/xml
+          cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system" />
+                      <certificates src="user" />
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          EOF
+          
+          if ! grep -q "networkSecurityConfig" decoded_apk/AndroidManifest.xml; then
+              sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
+          fi
+
+      - name: Rebuild, Align and Sign APK
+        run: |
+          apktool b decoded_apk --use-aapt2 -o rebuilt_unsigned.apk
+          zipalign -p -f 4 rebuilt_unsigned.apk aligned.apk
+          keytool -genkeypair -v -keystore release.keystore -alias egyplayer -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=EgyPlayer,O=EGYSAT,C=EG"
+          apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --v1-signing-enabled true --v2-signing-enabled true --out egyplayer-hostinger.apk aligned.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: egyplayer-hostinger-release
+          path: egyplayer-hostinger.apk
