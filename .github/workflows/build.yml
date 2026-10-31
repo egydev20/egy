@@ -27,9 +27,9 @@ jobs:
           curl -L -o original.apk "https://egyplayer.com/egypro/duplexiptv.apk"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Bypass Region Check & Redirect Domain
+      - name: Bypass Region, Domain & SSL Pinning
         run: |
-          # 1. استبدال النطاقات داخل ملفات Smali (هنا السر كله)
+          # 1. استبدال النطاقات داخل الكود
           find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexplay.com|egyplayer.com|g' {} +
           find decoded_apk/smali* -type f -exec sed -i 's|edit.duplexiptv.com|egyplayer.com|g' {} +
           find decoded_apk/smali* -type f -exec sed -i 's|api.duplexplay.com|egyplayer.com|g' {} +
@@ -41,25 +41,39 @@ jobs:
           find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexplay.com|egyplayer.com|g' {} +
           find decoded_apk/assets -type f \( -name "*.js" -o -name "*.html" -o -name "*.css" \) -exec sed -i 's|duplexiptv.com|egyplayer.com|g' {} +
 
-          # 3. إنشاء سكربت تجاوز فحص المنطقة
+          # 3. إضافة ملف يسمح بكل الشهادات (تجاوز حماية SSL)
+          mkdir -p decoded_apk/res/xml
+          cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system" />
+                      <certificates src="user" />
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          EOF
+
+          # 4. ربط ملف الحماية الجديد بـ AndroidManifest
+          sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" /g' decoded_apk/AndroidManifest.xml
+
+          # 5. كسر حماية الـ Certificate Pinner داخل كود OkHttp إن وجد
+          grep -rl "CertificatePinner" decoded_apk/smali*/okhttp3/ 2>/dev/null | while read file; do
+            sed -i '/\.method public final check(Ljava\/lang\/String;Ljava\/util\/List;)V/,/\.end method/c\
+          .method public final check(Ljava/lang/String;Ljava/util/List;)V\
+              .locals 0\
+              return-void\
+          .end method' "$file"
+          done
+
+          # 6. سكربت تجاوز فحص المنطقة (الويب)
           cat << 'EOF' > decoded_apk/assets/Web/region_bypass.js
           (function(win) {
               "use strict";
               try { localStorage.setItem("country_supported", "true"); } catch(e) {}
-              setInterval(function() {
-                  try {
-                      var elements = document.querySelectorAll("span, p, h1, h2, h3, h4, div");
-                      for (var i = 0; i < elements.length; i++) {
-                          var txt = (elements[i].innerText || "").trim().toLowerCase();
-                          if (txt.indexOf("not supported in your region") !== -1) {
-                              elements[i].style.display = "none";
-                          }
-                      }
-                  } catch(e) {}
-              }, 50);
           })(window);
           EOF
-
           if [ -f "decoded_apk/assets/Web/index.html" ]; then
               sed -i 's/<head>/<head><script src="region_bypass.js"><\/script>/g' decoded_apk/assets/Web/index.html
           fi
