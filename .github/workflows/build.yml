@@ -35,13 +35,14 @@ jobs:
           curl -L -o original.apk "$DIRECT_LINK"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Comprehensive Link Patching & API Routing
+      - name: Update API Endpoint to Subdomain & Network Security
         run: |
-          # استبدال أي روابط قديمة أو نطاقات مرتبطة بالتفعيل برابط الاستضافة الخاص بك
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://[a-zA-Z0-9.-]*workers\.dev|https://egyplayer.com/API|gI' {} +
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|http://[a-zA-Z0-9.-]*workers\.dev|https://egyplayer.com/API|gI' {} +
+          # استبدال الروابط القديمة بالدومين الفرعي الجديد
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://egyplayer.com/API|https://edit.egyplayer.com|gI' {} +
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|http://egyplayer.com/API|https://edit.egyplayer.com|gI' {} +
+          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://[a-zA-Z0-9.-]*workers\.dev|https://edit.egyplayer.com|gI' {} +
           
-          # تفعيل الاتصالات غير الآمنة (Cleartext) لضمان عدم حظر طلبات الاستضافة
+          # إعدادات الأمان للشبكة
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
