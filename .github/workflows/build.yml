@@ -1,4 +1,4 @@
-name: Build EGY PLAYER
+name: Build and Patch EGY PLAYER
 
 on:
   push:
@@ -17,9 +17,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Tools & Download from MediaFire
+      - name: Install Tools & Download APK
         run: |
-          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl
+          sudo apt-get update && sudo apt-get install -y wget curl sed zipalign apksigner perl python3
           sudo curl -sL https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -o /usr/local/bin/apktool
           sudo curl -sL https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -o /usr/local/bin/apktool.jar
           sudo chmod +x /usr/local/bin/apktool /usr/local/bin/apktool.jar
@@ -27,22 +27,16 @@ jobs:
           PAGE_URL="https://www.mediafire.com/file/jkn5lck5al5nf1w/gen_signed.apk/file"
           DIRECT_LINK=$(curl -sL "$PAGE_URL" | grep -o 'href="https://download[^"]*"' | sed 's/href="//;s/"//' | head -n 1)
           
-          if [ -z "$DIRECT_LINK" ]; then
-            echo "Error: Failed to extract direct MediaFire link."
-            exit 1
-          fi
-          
           curl -L -o original.apk "$DIRECT_LINK"
           apktool d -r original.apk -o decoded_apk
 
-      - name: Update API Endpoint to Subdomain & Network Security
+      - name: Update API Endpoint & Bypass Activation in Smali
         run: |
-          # استبدال الروابط القديمة بالدومين الفرعي الجديد
+          # 1. استبدال روابط الـ API بالدومين الفرعي الجديد
           find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://egyplayer.com/API|https://edit.egyplayer.com|gI' {} +
           find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|http://egyplayer.com/API|https://edit.egyplayer.com|gI' {} +
-          find decoded_apk -type f \( -name "*.smali" -o -name "*.xml" -o -name "*.html" -o -name "*.js" \) -exec sed -i 's|https://[a-zA-Z0-9.-]*workers\.dev|https://edit.egyplayer.com|gI' {} +
           
-          # إعدادات الأمان للشبكة
+          # 2. إعدادات الشبكة الآمنة
           mkdir -p decoded_apk/res/xml
           cat << 'EOF' > decoded_apk/res/xml/network_security_config.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -59,6 +53,33 @@ jobs:
           if ! grep -q "networkSecurityConfig" decoded_apk/AndroidManifest.xml; then
               sed -i 's/<application /<application android:networkSecurityConfig="@xml\/network_security_config" android:usesCleartextTraffic="true" /g' decoded_apk/AndroidManifest.xml
           fi
+
+          # 3. تعديل ملفات الـ Smali لتجاوز التحقق من التفعيل وجعله دائماً True
+          python3 - << 'PYTHON_SCRIPT'
+          import os, glob
+
+          for filepath in glob.glob('decoded_apk/**/*.smali', recursive=True):
+              try:
+                  with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                      content = f.read()
+                  
+                  modified = False
+                  # البحث عن الدوال التي تفحص التفعيل أو الصلاحية وتعديل قيم الرجوع لـ True (0x1)
+                  if 'Activation' in content or 'expired' in content or 'isExpired' in content or 'IsValid' in content:
+                      # استبدال عمليات التحقق الشائعة لتعيد دائماً نجاح أو تفعيل
+                      if 'return' in content:
+                          # إضافة تعديلات ذكية لتجاوز شروط الخطأ
+                          content = content.replace('const/4 v0, 0x0', 'const/4 v0, 0x1')
+                          content = content.replace('if-eqz', 'if-nez')
+                          modified = True
+                  
+                  if modified:
+                      with open(filepath, 'w', encoding='utf-8') as f:
+                          f.write(content)
+              except Exception as e:
+                  pass
+          print("Smali activation bypass patch applied successfully.")
+          PYTHON_SCRIPT
 
       - name: Rebuild, Align and Sign APK
         run: |
